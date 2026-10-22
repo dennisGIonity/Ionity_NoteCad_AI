@@ -1,0 +1,11 @@
+# Ionity NoteCad - Companion | Policy 986 AED | License AED 900
+data/
+models/
+adapters/
+*.gguf
+*.sqlite
+*.sqlite-*
+.env
+__pycache__/
+.pytest_cache/
+.venv/

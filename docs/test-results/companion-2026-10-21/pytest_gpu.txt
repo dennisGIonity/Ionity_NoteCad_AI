@@ -1,0 +1,57 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- E:\.claude\Ionity\.NoteCad\services\companion\.venv\Scripts\python.exe
+rootdir: E:\.claude\Ionity\.NoteCad\services\companion
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 42 items
+
+tests/test_api.py::test_full_flow PASSED                                 [  2%]
+tests/test_api.py::test_owners_are_isolated PASSED                       [  4%]
+tests/test_api.py::test_token_required_when_set PASSED                   [  7%]
+tests/test_companion.py::test_language_guess PASSED                      [  9%]
+tests/test_companion.py::test_redaction_masks_id_and_card_but_not_normal_numbers PASSED [ 11%]
+tests/test_companion.py::test_hash_embedder_similarity PASSED            [ 14%]
+tests/test_companion.py::test_parse_json_tolerates_fences PASSED         [ 16%]
+tests/test_companion.py::test_rule_facts_english_and_afrikaans PASSED    [ 19%]
+tests/test_companion.py::test_not_a_role PASSED                          [ 21%]
+tests/test_companion.py::test_fact_confirmation_and_update_keeps_history PASSED [ 23%]
+tests/test_companion.py::test_likes_and_dislikes_move_between_lists PASSED [ 26%]
+tests/test_companion.py::test_llm_fact_extraction_is_validated PASSED    [ 28%]
+tests/test_companion.py::test_explicit_remember_is_recalled_later PASSED [ 30%]
+tests/test_companion.py::test_memory_dedupe_and_redaction PASSED         [ 33%]
+tests/test_companion.py::test_observe_notes_feed_memory_vocab_and_keyterms PASSED [ 35%]
+tests/test_companion.py::test_explicit_style_instruction_wins_immediately PASSED [ 38%]
+tests/test_companion.py::test_language_preference_overrides_message_language PASSED [ 40%]
+tests/test_companion.py::test_thompson_sampling_converges_on_owner_preference PASSED [ 42%]
+tests/test_companion.py::test_edit_teaches_length_and_format PASSED      [ 45%]
+tests/test_companion.py::test_feedback_comment_is_learned PASSED         [ 47%]
+tests/test_companion.py::test_bad_feedback_values PASSED                 [ 50%]
+tests/test_companion.py::test_weekday_habits_become_nudges PASSED        [ 52%]
+tests/test_companion.py::test_consolidation_merges_and_decays PASSED     [ 54%]
+tests/test_companion.py::test_reembed_after_embedder_upgrade PASSED      [ 57%]
+tests/test_companion.py::test_training_export PASSED                     [ 59%]
+tests/test_companion.py::test_route_offline_maps_to_action_schema PASSED [ 61%]
+tests/test_companion.py::test_route_offline_low_confidence_asks_user PASSED [ 64%]
+tests/test_companion.py::test_no_model_mode_still_learns PASSED          [ 66%]
+tests/test_companion.py::test_all_dims_have_prompt_text PASSED           [ 69%]
+tests/test_companion.py::test_several_owned_things_and_near_location PASSED [ 71%]
+tests/test_companion.py::test_model_key_names_are_normalised PASSED      [ 73%]
+tests/test_companion.py::test_model_guess_cannot_overwrite_a_count_or_a_stated_fact PASSED [ 76%]
+tests/test_companion.py::test_notes_do_not_run_model_fact_extraction PASSED [ 78%]
+tests/test_companion.py::test_explicit_memories_stay_in_view PASSED      [ 80%]
+tests/test_companion.py::test_steps_and_long_explanations PASSED         [ 83%]
+tests/test_companion.py::test_vet_is_filed_as_vet_not_manager PASSED     [ 85%]
+tests/test_companion.py::test_keyterms_strip_place_prefix_and_fillers PASSED [ 88%]
+tests/test_companion.py::test_openai_compatible_embedder_uses_task_prompts_and_truncates PASSED [ 90%]
+tests/test_companion.py::test_openai_llm_turns_thinking_off_and_sends_schema PASSED [ 92%]
+tests/test_live.py::test_embeddinggemma_ranks_related_memory_first PASSED [ 95%]
+tests/test_live.py::test_companion_recalls_and_obeys_style PASSED        [ 97%]
+tests/test_live.py::test_offline_router_picks_the_owners_pump PASSED     [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\.claude\Ionity\.NoteCad\services\companion\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 42 passed, 1 warning in 5.73s ========================

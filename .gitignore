@@ -1,0 +1,39 @@
+# Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+# Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
+# Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
+
+# Local model weights, runtimes and owner data - never committed
+/models/
+/runtime/
+/data/
+*.gguf
+*.safetensors
+*.bin
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Scratch
+.write_test
+*.log
+Thumbs.db
+.DS_Store

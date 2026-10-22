@@ -1,0 +1,633 @@
+{
+  "model": "openai:notecad-gemma4-e2b",
+  "embedder": "embeddinggemma-300m",
+  "load_seconds": 0.2,
+  "turns": [
+    {
+      "day": 0,
+      "kind": "chat",
+      "text": "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+      "reply": "Hello Dennis. I'm your NoteCad Companion, ready to assist you today.\n\nHere is a summary of what I know about you:\n*   You are a farmer near Bronkhorstspruit.\n*   You own 120 sheep and 300 cattle.\n\nHow can I help you this morning?",
+      "style": {
+        "length": "medium",
+        "tone": "neutral",
+        "format": "bullets",
+        "proactivity": "answer_only"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [
+          {
+            "key": "owner.name",
+            "value": "Dennis",
+            "change": "new"
+          },
+          {
+            "key": "owner.location",
+            "value": "near Bronkhorstspruit",
+            "change": "new"
+          },
+          {
+            "key": "owner.role",
+            "value": "farmer",
+            "change": "new"
+          },
+          {
+            "key": "owns.sheep",
+            "value": 120,
+            "change": "new"
+          },
+          {
+            "key": "owns.cattle",
+            "value": 300,
+            "change": "new"
+          }
+        ],
+        "style": [],
+        "remembered": null
+      },
+      "memories_used": [],
+      "seconds": 2.4,
+      "feedback": {
+        "interaction_id": "ea52c384-7d55-48a4-8525-27e0a558efca",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "medium",
+            "signal": "up"
+          },
+          {
+            "dim": "tone",
+            "option": "neutral",
+            "signal": "up"
+          },
+          {
+            "dim": "format",
+            "option": "bullets",
+            "signal": "up"
+          },
+          {
+            "dim": "proactivity",
+            "option": "answer_only",
+            "signal": "up"
+          }
+        ]
+      }
+    },
+    {
+      "day": 0,
+      "kind": "chat",
+      "text": "Remember that the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+      "reply": "I have noted that Dr Botha, the vet, is scheduled to come on Thursday at 10 for the ewes. I will remember this for you.",
+      "style": {
+        "length": "short",
+        "tone": "neutral",
+        "format": "bullets",
+        "proactivity": "answer_only"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [
+          {
+            "key": "people.vet",
+            "value": "Dr Botha",
+            "change": "new"
+          }
+        ],
+        "style": [],
+        "remembered": "the vet, Dr Botha, comes on Thursday at 10 for the ewes."
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle."
+      ],
+      "seconds": 1.2
+    },
+    {
+      "day": 0,
+      "kind": "note",
+      "text": "Dipped the Dohne Merino ewes in the south paddock, 40 done.",
+      "facts": [],
+      "seconds": 0.0
+    },
+    {
+      "day": 1,
+      "kind": "chat",
+      "text": "What do I still need to do this week?",
+      "reply": "I do not have a list of your current tasks for this week. Could you tell me what you would like me to look for?",
+      "style": {
+        "length": "short",
+        "tone": "neutral",
+        "format": "bullets",
+        "proactivity": "answer_only"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [],
+        "style": [],
+        "remembered": null
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done."
+      ],
+      "seconds": 0.6,
+      "feedback": {
+        "interaction_id": "fb4a5031-9bdd-4159-9954-6a235a3ef9eb",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "short",
+            "signal": "edited_shorter"
+          },
+          {
+            "dim": "format",
+            "option": "bullets",
+            "signal": "edited_format"
+          }
+        ]
+      }
+    },
+    {
+      "day": 2,
+      "kind": "chat",
+      "text": "Die hoofpomp lek weer by die flens. Wat moet ek doen?",
+      "reply": "Ek verstaan dat die hoofpomp weer lek by die flens. Ek weet nie presies wat jy moet doen nie, maar ek kan jou help om 'n plan te maak. Wil jy dalk iemand kontak, of wil jy dalk na 'n mekaanman wys?",
+      "style": {
+        "length": "medium",
+        "tone": "neutral",
+        "format": "bullets",
+        "proactivity": "answer_only"
+      },
+      "language": "af",
+      "learned": {
+        "facts": [],
+        "style": [],
+        "remembered": null
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done."
+      ],
+      "seconds": 1.2,
+      "feedback": {
+        "interaction_id": "9c522e3b-62bb-4849-b704-f43cd085c4d5",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "medium",
+            "signal": "down"
+          },
+          {
+            "dim": "tone",
+            "option": "neutral",
+            "signal": "down"
+          },
+          {
+            "dim": "format",
+            "option": "bullets",
+            "signal": "down"
+          },
+          {
+            "dim": "proactivity",
+            "option": "answer_only",
+            "signal": "down"
+          },
+          {
+            "dim": "length",
+            "option": "short"
+          }
+        ]
+      }
+    },
+    {
+      "day": 7,
+      "kind": "note",
+      "text": "Dipping day again, the rams in the north camp.",
+      "facts": [],
+      "seconds": 0.0
+    },
+    {
+      "day": 7,
+      "kind": "chat",
+      "text": "When is the vet coming again, and who is it?",
+      "reply": "The vet, Dr Botha, is coming on Thursday at 10 for the ewes.",
+      "style": {
+        "length": "short",
+        "tone": "formal",
+        "format": "prose",
+        "proactivity": "suggest_next"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [],
+        "style": [],
+        "remembered": null
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done.",
+        "[Livestock] Dipping day again, the rams in the north camp.",
+        "Die hoofpomp lek weer by die flens. Wat moet ek doen?"
+      ],
+      "seconds": 0.6,
+      "feedback": {
+        "interaction_id": "b3bb1861-e180-4a5c-af99-512786dd4977",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "short",
+            "signal": "up"
+          },
+          {
+            "dim": "tone",
+            "option": "formal",
+            "signal": "up"
+          },
+          {
+            "dim": "format",
+            "option": "prose",
+            "signal": "up"
+          },
+          {
+            "dim": "proactivity",
+            "option": "suggest_next",
+            "signal": "up"
+          }
+        ]
+      }
+    },
+    {
+      "day": 9,
+      "kind": "chat",
+      "text": "I don't like long explanations. Just give me the steps.",
+      "reply": "Understood. I will keep my replies short and provide steps when you ask for them.",
+      "style": {
+        "length": "short",
+        "tone": "formal",
+        "format": "bullets",
+        "proactivity": "answer_only"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [
+          {
+            "key": "dislikes",
+            "value": "long explanations",
+            "change": "added"
+          }
+        ],
+        "style": [
+          {
+            "dim": "length",
+            "option": "short"
+          },
+          {
+            "dim": "format",
+            "option": "bullets"
+          }
+        ],
+        "remembered": null
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done.",
+        "Die hoofpomp lek weer by die flens. Wat moet ek doen?",
+        "[Livestock] Dipping day again, the rams in the north camp."
+      ],
+      "seconds": 0.9
+    },
+    {
+      "day": 14,
+      "kind": "note",
+      "text": "Dipping the weaners, borehole 2 pressure low this morning.",
+      "facts": [],
+      "seconds": 0.0
+    },
+    {
+      "day": 14,
+      "kind": "chat",
+      "text": "How many sheep and cattle do I have?",
+      "reply": "*   Sheep: 120\n*   Cattle: 300",
+      "style": {
+        "length": "short",
+        "tone": "neutral",
+        "format": "bullets",
+        "proactivity": "suggest_next"
+      },
+      "language": "en",
+      "learned": {
+        "facts": [],
+        "style": [],
+        "remembered": null
+      },
+      "memories_used": [
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done.",
+        "[Livestock] Dipping the weaners, borehole 2 pressure low this morning.",
+        "[Livestock] Dipping day again, the rams in the north camp."
+      ],
+      "seconds": 0.9,
+      "feedback": {
+        "interaction_id": "5798ffa5-2a3c-4b7b-a053-aea8fc8034a0",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "short",
+            "signal": "up"
+          },
+          {
+            "dim": "tone",
+            "option": "neutral",
+            "signal": "up"
+          },
+          {
+            "dim": "format",
+            "option": "bullets",
+            "signal": "up"
+          },
+          {
+            "dim": "proactivity",
+            "option": "suggest_next",
+            "signal": "up"
+          }
+        ]
+      }
+    },
+    {
+      "day": 16,
+      "kind": "chat",
+      "text": "Antwoord asseblief in Afrikaans van nou af. Wat is my planne vir Donderdag?",
+      "reply": "Jy het die vet op Donderdag om 10:00 vir die ewes.",
+      "style": {
+        "length": "short",
+        "tone": "formal",
+        "format": "bullets",
+        "proactivity": "suggest_next"
+      },
+      "language": "af",
+      "learned": {
+        "facts": [],
+        "style": [
+          {
+            "dim": "language",
+            "option": "af"
+          }
+        ],
+        "remembered": null
+      },
+      "memories_used": [
+        "the vet, Dr Botha, comes on Thursday at 10 for the ewes.",
+        "Hi! My name is Dennis. I'm a farmer near Bronkhorstspruit and we have 120 sheep and 300 cattle.",
+        "Die hoofpomp lek weer by die flens. Wat moet ek doen?",
+        "[Livestock] Dipped the Dohne Merino ewes in the south paddock, 40 done.",
+        "[Livestock] Dipping the weaners, borehole 2 pressure low this morning."
+      ],
+      "seconds": 1.0,
+      "feedback": {
+        "interaction_id": "e6dc3821-c96a-4927-b1ef-fc851a02ee8f",
+        "changes": [
+          {
+            "dim": "length",
+            "option": "short",
+            "signal": "up"
+          },
+          {
+            "dim": "tone",
+            "option": "formal",
+            "signal": "up"
+          },
+          {
+            "dim": "format",
+            "option": "bullets",
+            "signal": "up"
+          },
+          {
+            "dim": "proactivity",
+            "option": "suggest_next",
+            "signal": "up"
+          }
+        ]
+      }
+    }
+  ],
+  "route_offline": {
+    "capture_id": "cap-demo",
+    "event_index": 0,
+    "summary": "The main water pump is leaking significantly, and the beans require water.",
+    "actions": [
+      {
+        "type": "append_note",
+        "node_id": "n-pump",
+        "text": "The main water pump is leaking significantly, and the beans require water.",
+        "tags": [],
+        "confidence": 1.0,
+        "evidence": "die groot pomp lek baie erg, die bone het water nodig"
+      },
+      {
+        "type": "set_status",
+        "node_id": "n-pump",
+        "status": "critical",
+        "reason": "The main water pump is leaking significantly, and the beans require water.",
+        "confidence": 1.0,
+        "evidence": "die groot pomp lek baie erg, die bone het water nodig"
+      },
+      {
+        "type": "create_alert",
+        "node_id": "n-pump",
+        "severity": "critical",
+        "title": "The main water pump is leaking significantly, and the beans require water.",
+        "category": "other",
+        "confidence": 1.0,
+        "evidence": "die groot pomp lek baie erg, die bone het water nodig"
+      },
+      {
+        "type": "create_task",
+        "node_id": "n-pump",
+        "title": "Fix main water pump leak",
+        "priority": "urgent",
+        "due_at": null,
+        "assignee_hint": null,
+        "confidence": 1.0,
+        "evidence": "die groot pomp lek baie erg, die bone het water nodig"
+      }
+    ],
+    "provenance": {
+      "policy": "986 AED",
+      "license": "AED 900",
+      "org": "Ionity Global (Pty) Ltd",
+      "pipeline": "notecad-companion 0.1.0",
+      "router": "companion-offline"
+    }
+  },
+  "route_offline_seconds": 1.1,
+  "consolidate": {
+    "reembedded": 0,
+    "merged": 0,
+    "decayed": 0,
+    "pruned": 0,
+    "facts_dropped": 0
+  },
+  "card": {
+    "facts": {
+      "dislikes": {
+        "value": [
+          "long explanations"
+        ],
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "owner.location": {
+        "value": "near Bronkhorstspruit",
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "owner.name": {
+        "value": "Dennis",
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "owner.role": {
+        "value": "farmer",
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "owns.cattle": {
+        "value": 300,
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "owns.sheep": {
+        "value": 120,
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "people.vet": {
+        "value": "Dr Botha",
+        "confidence": 0.75,
+        "source": "rule:chat"
+      },
+      "prefers.language": {
+        "value": "af",
+        "confidence": 0.99,
+        "source": "explicit"
+      }
+    },
+    "style_learned": {
+      "length": {
+        "short": 0.891,
+        "medium": 0.152,
+        "detailed": 0.095
+      },
+      "tone": {
+        "casual": 0.5,
+        "neutral": 0.599,
+        "formal": 0.748
+      },
+      "format": {
+        "prose": 0.288,
+        "bullets": 0.856
+      },
+      "proactivity": {
+        "answer_only": 0.498,
+        "suggest_next": 0.798
+      }
+    },
+    "writing": {
+      "words_per_message": 10.8,
+      "words_per_sentence": 7.0,
+      "formality": -0.1,
+      "emoji_rate": 0.0,
+      "bullet_use": 0.1
+    },
+    "languages": {
+      "en": 0.7,
+      "af": 0.3,
+      "mixed": 0.0
+    },
+    "top_words": [
+      "dipping",
+      "ewes",
+      "sheep",
+      "cattle",
+      "vet",
+      "weaners",
+      "borehole",
+      "pressure",
+      "rams",
+      "north",
+      "camp",
+      "dipped",
+      "dohne",
+      "merino",
+      "south",
+      "paddock",
+      "antwoord",
+      "afrikaans",
+      "planne",
+      "donderdag"
+    ],
+    "busiest_hours": [
+      "Mon 07:00",
+      "Mon 08:00",
+      "Wed 06:00"
+    ],
+    "habits": [],
+    "memories": 8,
+    "interactions": 8,
+    "adapter": null
+  },
+  "style_posteriors": {
+    "length": {
+      "short": 0.891,
+      "medium": 0.152,
+      "detailed": 0.095
+    },
+    "tone": {
+      "casual": 0.5,
+      "neutral": 0.599,
+      "formal": 0.748
+    },
+    "format": {
+      "prose": 0.288,
+      "bullets": 0.856
+    },
+    "proactivity": {
+      "answer_only": 0.498,
+      "suggest_next": 0.798
+    }
+  },
+  "keyterms": [
+    "Dr Botha",
+    "Dennis",
+    "Bronkhorstspruit",
+    "dipping",
+    "ewes",
+    "sheep",
+    "cattle",
+    "vet",
+    "weaners",
+    "borehole",
+    "pressure",
+    "rams",
+    "north",
+    "camp",
+    "dipped",
+    "dohne",
+    "merino",
+    "south",
+    "paddock",
+    "antwoord",
+    "afrikaans",
+    "planne",
+    "donderdag",
+    "many",
+    "long"
+  ],
+  "nudges_next_monday": []
+}
