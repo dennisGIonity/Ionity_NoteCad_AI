@@ -1,0 +1,27 @@
+/* Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900 */
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  color: #e2e8f0;
+  background: radial-gradient(900px 600px at 10% -10%, #0b2540 0%, transparent 60%),
+              radial-gradient(700px 500px at 110% 110%, #062d26 0%, transparent 55%), #020617;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+.safe {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+}
+.nc-glass { @apply border border-white/15 bg-slate-900/60 backdrop-blur-xl; }
+button { -webkit-user-select: none; user-select: none; }
+:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

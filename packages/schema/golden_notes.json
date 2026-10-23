@@ -1,0 +1,25 @@
+{
+  "about": "Ionity NoteCad | Policy 986 AED | License AED 900. Twenty field notes for the seeded Highveld farm (services/brain/tests/farm.py). 'node' is the key of the expected target; a channel child of it (Maintenance, Health Alerts) also counts. 'expect' lists action types that must appear. Phase 1 exit: at least 85 % right first time.",
+  "notes": [
+    {"text": "One of the ewes in the south paddock broke her back left leg", "events": [{"node": "sheep", "expect": ["create_alert", "create_task"]}]},
+    {"text": "The John Deere tractor's hydraulic hose just burst near the bean fields", "events": [{"node": "tractors", "expect": ["create_alert"]}]},
+    {"text": "Just finished planting the last two hundred hectares of beans", "events": [{"node": "beans", "expect": ["append_note"]}]},
+    {"text": "The main water pump is leaking badly", "events": [{"node": "pump", "expect": ["create_alert", "create_task"]}]},
+    {"text": "Die groot pomp lek weer by die flens", "events": [{"node": "pump", "expect": ["append_note"]}]},
+    {"text": "Ask Sipho to fix the north fence tomorrow", "events": [{"node": "north_fence", "expect": ["create_task"], "assignee": "Sipho"}]},
+    {"text": "Vra Sipho om die trekker se olie te verander voor Vrydag", "events": [{"node": "tractors", "expect": ["create_task"], "assignee": "Sipho"}]},
+    {"text": "Dipped all the ewes this morning, no problems", "events": [{"node": "sheep", "expect": ["append_note"]}]},
+    {"text": "Two cows are limping, the vet must look at them", "events": [{"node": "cattle", "expect": ["create_alert"]}]},
+    {"text": "Centre pivot 2 is making a grinding noise", "events": [{"node": "pivot", "expect": ["create_alert"]}]},
+    {"text": "We need to order more diesel for the tractors", "events": [{"node": "tractors", "expect": ["create_task"]}]},
+    {"text": "Die beeste is in die suid kamp geskuif", "events": [{"node": "cattle", "expect": ["append_note"]}]},
+    {"text": "Borehole pump pressure is low again", "events": [{"node": "pump", "expect": ["create_alert"]}]},
+    {"text": "Sipho fixed the fence by the south paddock", "events": [{"node": "north_fence", "expect": ["append_note"]}]},
+    {"text": "The bean planting log is up to date, 3000 hectares done", "events": [{"node": "beans", "expect": ["append_note"]}]},
+    {"text": "Remember to service the John Deere next week", "events": [{"node": "tractors", "expect": ["create_task"]}]},
+    {"text": "One of the rams got out through the north fence", "events": [{"node": "sheep", "expect": ["append_note"]}]},
+    {"text": "Die skape het vandag water gekry by die suid kamp", "events": [{"node": "sheep", "expect": ["append_note"]}]},
+    {"text": "The pivot finished irrigating the beans, and the main pump is running fine now", "events": [{"node": "pivot", "expect": ["append_note"]}, {"node": "pump", "expect": ["append_note"]}]},
+    {"text": "A calf was born last night, healthy and strong", "events": [{"node": "cattle", "expect": ["append_note"]}]}
+  ]
+}

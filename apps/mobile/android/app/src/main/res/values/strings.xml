@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NoteCad</string>
+    <string name="title_activity_main">NoteCad</string>
+    <string name="package_name">today.ionity.notecad</string>
+    <string name="custom_url_scheme">today.ionity.notecad</string>
+    <string name="shortcut_record">Record note</string>
+    <string name="shortcut_record_long">Record a NoteCad note</string>
+</resources>

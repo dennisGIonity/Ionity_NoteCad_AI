@@ -388,3 +388,56 @@ def test_openai_llm_turns_thinking_off_and_sends_schema():
     assert out == "{\"node_id\": \"n-pump\"}"
     assert bodies[0]["reasoning_effort"] == "none"
     assert bodies[0]["response_format"]["type"] == "json_schema"
+
+
+def test_open_work_from_the_brain_reaches_the_prompt():
+    import httpx
+    from notecad_companion.api import brain_digest
+
+    def handler(req):
+        assert req.url.path == "/v1/workspaces/ws1/digest"
+        return httpx.Response(200, json={"alerts": [{"severity": "critical", "title": "Main water pump leaking",
+                                                      "path": "Infrastructure > Water > Main Water Pump"}],
+                                         "tasks": [{"priority": "high", "title": "Fix the north fence", "path": "Fencing",
+                                                    "assignee_name": "Sipho Dlamini", "due_at": "2026-10-20T15:00:00+00:00"}]})
+    fetch = brain_digest("http://brain", "ws1", transport=httpx.MockTransport(handler))
+    c = Companion(Store(":memory:"), ScriptedLLM(), HashEmbedder(256), open_work=fetch, llm_fact_extraction=False)
+    c.chat("What do I still need to do this week?", now=MON_9AM)
+    system = c.llm.calls[-1][0][0]["content"]
+    assert "ALERT (critical) Main water pump leaking" in system
+    assert "TASK (high) Fix the north fence - Fencing - Sipho Dlamini, due 2026-10-20 15:00 UTC" in system
+
+
+def test_brain_down_does_not_break_chat():
+    def boom():
+        raise RuntimeError("brain offline")
+    c = Companion(Store(":memory:"), ScriptedLLM(), HashEmbedder(256), open_work=boom, llm_fact_extraction=False)
+    assert c.chat("hello", now=MON_9AM)["reply"] == "Noted."
+
+
+def test_map_lines_and_focus_from_the_brain_reach_the_prompt():
+    import httpx
+    from notecad_companion.api import brain_digest
+    asked = []
+
+    def handler(req):
+        asked.append(req.url.params.get("focus"))
+        return httpx.Response(200, json={
+            "alerts": [], "tasks": [],
+            "map": {"lines": ["NEEDS WORK Operations > Vehicles > Tractors: warning, alert: hydraulic hose leaking",
+                              "PROGRESS Operations > Crops > South Block: 2800 of 3000 ha planted (93.3%)"]},
+            "focus": {"path": "Operations > Crops > South Block", "display_status": "info",
+                      "progress": {"pct": 93.3, "done": 2800, "total": 3000, "unit": "ha", "verb": "planted"},
+                      "tasks": ["Finish the last 200 ha"], "alerts": [], "children": [],
+                      "recent_notes": [{"body": "Planted 400 ha today."}]}})
+    fetch = brain_digest("http://brain", "ws1", transport=httpx.MockTransport(handler))
+    c = Companion(Store(":memory:"), ScriptedLLM(), HashEmbedder(256), open_work=fetch, llm_fact_extraction=False)
+    c.chat("How much of the South block is planted?", now=MON_9AM, context_node_id="n-south")
+    system = c.llm.calls[-1][0][0]["content"]
+    assert asked == ["n-south"]
+    assert "PROGRESS Operations > Crops > South Block: 2800 of 3000 ha planted (93.3%)" in system
+    assert "NEEDS WORK Operations > Vehicles > Tractors" in system
+    assert ("OPEN ON SCREEN NOW ('this', 'hier' means it): Operations > Crops > South Block - status info; "
+            "2800 of 3000 ha planted (93.3%); open tasks: Finish the last 200 ha; latest notes: Planted 400 ha today.") in system
+    c.chat("And what about the tractors?", now=MON_9AM)  # no node open: no focus asked for
+    assert asked[-1] is None

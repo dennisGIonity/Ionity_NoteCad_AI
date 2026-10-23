@@ -1,0 +1,23 @@
+# Ionity NoteCad - Desktop shell | Ionity Global (Pty) Ltd | AEDI
+# Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
+# Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
+[package]
+name = "notecad-desktop"
+version = "0.3.0"
+description = "Ionity NoteCad: transparent voice recorder and live mind map"
+authors = ["Dennis Grobler <dennis.g@ionity.digital>"]
+edition = "2021"
+publish = false
+
+[lib]
+name = "notecad_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,10 @@
+data/
+models/
+adapters/
+*.gguf
+*.sqlite
+*.sqlite-*
+.env
+__pycache__/
+.pytest_cache/
+.venv/

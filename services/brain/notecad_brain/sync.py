@@ -1,0 +1,544 @@
+# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
+# Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
+"""Multi-worker sync (Phase 5): the desktop, an Edge AI Node on the farm and Supabase keep the same map.
+
+How it works
+  1  Capture. Database triggers write every insert, update and delete on the shared tables into `sync_changes`
+     (the journal), with the worker that made it and a millisecond UTC time. Triggers catch every code path, the
+     owner's notes, Undo, a task ticked off, a branch renamed.
+  2  Push and pull. A worker pushes the journal rows it has not sent yet to its hub and pulls what the hub has from
+     everyone else. A hub is another brain (an Edge AI Node, over HTTP: /v1/sync/push and /v1/sync/pull) or a
+     Postgres database (Supabase: the journal and the tables live there, with row-level security for the apps).
+  3  Apply. Each incoming change is applied to its row unless this worker already has a newer change for that row
+     (last writer wins, by time then worker id). Applying runs with capture switched off, so nothing echoes back,
+     and the status roll-up is recomputed locally.
+  4  action_log.synced_at is set when a change has reached the hub (and on arrival for changes made elsewhere), so
+     "waiting to sync" on the desktop counts only this worker's unsent work.
+
+Not synced: node_embeddings (rebuilt per worker, per model), jobs (each worker's own queue), audio files (stay
+where they were recorded; the capture row travels).
+"""
+from __future__ import annotations
+
+import json
+import socket
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Iterable
+
+from .common import now_iso
+from .db import Database
+
+SEP = "\x1f"  # joins composite primary keys into one text key, the same on SQLite and Postgres
+
+# table -> (primary key columns, how to find its workspace)
+TABLES: dict[str, tuple[list[str], str]] = {
+    "workspaces": (["id"], "id"),
+    "members": (["id"], "workspace_id"),
+    "nodes": (["id"], "workspace_id"),
+    "node_aliases": (["node_id", "alias"], "nodes:node_id"),
+    "edges": (["id"], "workspace_id"),
+    "captures": (["id"], "workspace_id"),
+    "capture_events": (["capture_id", "idx"], "captures:capture_id"),
+    "notes": (["id"], "workspace_id"),
+    "tasks": (["id"], "workspace_id"),
+    "alerts": (["id"], "workspace_id"),
+    "profile_facts": (["workspace_id", "key"], "workspace_id"),
+    "inbox": (["id"], "workspace_id"),
+    "action_log": (["id"], "workspace_id"),
+    "notifications": (["id"], "workspace_id"),
+    "route_corrections": (["id"], "workspace_id"),
+}
+ORDER = list(TABLES)  # parents before children
+IGNORED_COLUMNS = {"action_log": {"synced_at"}}  # bookkeeping, not a change
+
+JOURNAL_SQLITE = """
+create table if not exists sync_state (key text primary key, value text);
+create table if not exists sync_changes (
+  seq integer primary key autoincrement, tbl text not null, pk text not null, op text not null, row text, ws text,
+  origin text not null, ts text not null, origin_seq integer, via text, received_at text);
+create index if not exists sync_changes_row on sync_changes(tbl, pk, ts);
+create index if not exists sync_changes_origin on sync_changes(origin, origin_seq);
+create index if not exists sync_changes_ws on sync_changes(ws)
+"""
+JOURNAL_PG = """
+create table if not exists sync_state (key text primary key, value text);
+create table if not exists sync_changes (
+  seq bigserial primary key, tbl text not null, pk text not null, op text not null, row text, ws text,
+  origin text not null, ts text not null, origin_seq bigint, via text, received_at text);
+create index if not exists sync_changes_row on sync_changes(tbl, pk, ts);
+create index if not exists sync_changes_origin on sync_changes(origin, origin_seq);
+create index if not exists sync_changes_ws on sync_changes(ws)
+"""
+PG_FUNCTION = r"""
+create or replace function nc_sync_capture() returns trigger language plpgsql as $f$
+declare r jsonb; o jsonb; keys text[] := '{}'; c text; w text; src text;
+begin
+  if coalesce(current_setting('notecad.applying', true), '') = '1' then return null; end if;
+  if TG_OP = 'DELETE' then r := to_jsonb(OLD); else r := to_jsonb(NEW); end if;
+  if TG_OP = 'UPDATE' then
+    o := to_jsonb(OLD);
+    if (o - 'synced_at') = (r - 'synced_at') then return null; end if;
+  end if;
+  foreach c in array TG_ARGV loop keys := keys || (r->>c); end loop;
+  if TG_TABLE_NAME = 'workspaces' then w := r->>'id';
+  elsif TG_TABLE_NAME = 'node_aliases' then select n.workspace_id into w from nodes n where n.id = r->>'node_id';
+  elsif TG_TABLE_NAME = 'capture_events' then select x.workspace_id into w from captures x where x.id = r->>'capture_id';
+  else w := r->>'workspace_id'; end if;
+  src := coalesce(nullif(current_setting('notecad.worker', true), ''),
+                  (select value from sync_state where key = 'worker_id'), 'cloud');
+  insert into sync_changes(tbl, pk, op, row, ws, origin, ts)
+  values (TG_TABLE_NAME, array_to_string(keys, chr(31)), case when TG_OP = 'DELETE' then 'D' else 'U' end,
+          case when TG_OP = 'DELETE' then null else r::text end, w, src,
+          to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));
+  return null;
+end $f$
+"""
+
+
+def _ws_sql(table: str, ref: str) -> str:
+    how = TABLES[table][1]
+    if ":" in how:
+        parent, col = how.split(":")
+        return f"(select workspace_id from {parent} where id = {ref}.{col})"
+    return f"{ref}.{how}"
+
+
+def install(db: Database) -> None:
+    """Journal tables and capture triggers. Re-run on every start, so new columns are always captured."""
+    with db._lock:
+        c = db._conn
+        if db.kind == "sqlite":
+            for stmt in [s.strip() for s in JOURNAL_SQLITE.split(";") if s.strip()]:
+                c.execute(stmt)
+            for t, (pk, _) in TABLES.items():
+                cols = [r[1] for r in c.execute(f"pragma table_info({t})").fetchall()]
+                watched = [x for x in cols if x not in IGNORED_COLUMNS.get(t, set())]
+                guard = "(select value from sync_state where key='applying') is null"
+                key = lambda ref: " || char(31) || ".join(f"cast({ref}.{k} as text)" for k in pk)  # noqa: E731
+                obj = "json_object(" + ", ".join(f"'{x}', NEW.{x}" for x in cols) + ")"
+                ins = (f"insert into sync_changes(tbl, pk, op, row, ws, origin, ts) values ('{t}', {{key}}, '{{op}}', "
+                       f"{{row}}, {{ws}}, coalesce((select value from sync_state where key='worker_id'), 'local'), "
+                       f"strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+                changed = " or ".join(f"OLD.{x} is not NEW.{x}" for x in watched)
+                for name, sql in (
+                    ("ins", f"after insert on {t} when {guard} begin "
+                            + ins.format(key=key("NEW"), op="U", row=obj, ws=_ws_sql(t, "NEW")) + "; end"),
+                    ("upd", f"after update on {t} when {guard} and ({changed}) begin "
+                            + ins.format(key=key("NEW"), op="U", row=obj, ws=_ws_sql(t, "NEW")) + "; end"),
+                    ("del", f"after delete on {t} when {guard} begin "
+                            + ins.format(key=key("OLD"), op="D", row="null", ws=_ws_sql(t, "OLD")) + "; end"),
+                ):
+                    c.execute(f"drop trigger if exists nc_sync_{t}_{name}")
+                    c.execute(f"create trigger nc_sync_{t}_{name} {sql}")
+        else:
+            for stmt in [s.strip() for s in JOURNAL_PG.split(";") if s.strip()]:
+                c.execute(stmt)
+            c.execute(PG_FUNCTION)
+            for t, (pk, _) in TABLES.items():
+                args = ", ".join(f"'{k}'" for k in pk)
+                c.execute(f"drop trigger if exists nc_sync_{t} on {t}")
+                c.execute(f"create trigger nc_sync_{t} after insert or update or delete on {t} "
+                          f"for each row execute function nc_sync_capture({args})")
+
+
+@dataclass
+class Change:
+    tbl: str
+    pk: str
+    op: str
+    row: dict | None
+    ws: str | None
+    origin: str
+    ts: str
+    origin_seq: int
+    seq: int = 0
+
+    def as_dict(self) -> dict:
+        return {"tbl": self.tbl, "pk": self.pk, "op": self.op, "row": self.row, "ws": self.ws,
+                "origin": self.origin, "ts": self.ts, "origin_seq": self.origin_seq, "seq": self.seq}
+
+    @classmethod
+    def of(cls, d: dict) -> "Change":
+        row = d.get("row")
+        if isinstance(row, str):
+            row = json.loads(row)
+        return cls(d["tbl"], str(d["pk"]), d["op"], row, d.get("ws"), d["origin"], d["ts"],
+                   int(d.get("origin_seq") or d.get("seq") or 0), int(d.get("seq") or 0))
+
+
+class Journal:
+    """The change journal on one database: a brain's own, or a Postgres hub (Supabase)."""
+
+    def __init__(self, db: Database, worker_id: str | None = None, default_worker: str | None = None):
+        self.db = db
+        install(db)
+        self.worker_id = self._worker(worker_id, default_worker)
+        self._cols: dict[str, list[str]] = {}
+
+    def _worker(self, wanted: str | None, default: str | None) -> str:
+        row = self.db.one("select value from sync_state where key='worker_id'")
+        if wanted and (row is None or row["value"] != wanted):
+            self.set_state("worker_id", wanted)
+            return wanted
+        if row:
+            return row["value"]
+        wid = default or f"{socket.gethostname().lower()}-{uuid.uuid4().hex[:6]}"
+        self.set_state("worker_id", wid)
+        return wid
+
+    # ---------------------------------------------------------------- state
+    def state(self, key: str, default: str | None = None) -> str | None:
+        r = self.db.one("select value from sync_state where key=?", (key,))
+        return r["value"] if r else default
+
+    def set_state(self, key: str, value: str | None) -> None:
+        with self.db.tx():
+            self.db.execute("delete from sync_state where key=?", (key,))
+            if value is not None:
+                self.db.execute("insert into sync_state(key, value) values (?, ?)", (key, value))
+
+    # ---------------------------------------------------------------- read the journal
+    def _rows(self, where: str, args: list, limit: int, workspaces: list[str] | None) -> list[Change]:
+        if workspaces:
+            where += f" and (ws is null or ws in ({', '.join('?' for _ in workspaces)}))"
+            args = args + list(workspaces)
+        rows = self.db.query(f"select * from sync_changes where {where} order by seq limit ?", args + [limit])
+        out = []
+        for r in rows:
+            ch = Change.of({**r, "origin_seq": r["origin_seq"] or r["seq"]})
+            out.append(ch)
+        return out
+
+    def to_push(self, after_seq: int, peer: str | None, limit: int = 500, workspaces: list[str] | None = None) -> list[Change]:
+        """Everything this worker holds after the cursor, except what came from the peer itself."""
+        where, args = "seq > ?", [after_seq]
+        if peer:
+            where += " and origin <> ? and (via is null or via <> ?)"
+            args += [peer, peer]
+        return self._rows(where, args, limit, workspaces)
+
+    def to_serve(self, requester: str, after_seq: int, limit: int = 500, workspaces: list[str] | None = None) -> tuple[list[Change], int, bool]:
+        """What a hub hands a worker that asks: everything after its cursor that it did not make itself."""
+        rows = self.db.query("select seq, origin from sync_changes where seq > ? order by seq limit ?", (after_seq, limit + 1))
+        more = len(rows) > limit
+        rows = rows[:limit]
+        last = rows[-1]["seq"] if rows else after_seq
+        changes = self._rows("seq > ? and seq <= ? and origin <> ? and (via is null or via <> ?)",
+                             [after_seq, last, requester, requester], limit, workspaces)
+        return changes, last, more
+
+    def baseline(self) -> int:
+        """Journal the rows that existed before sync was switched on, once, so the first sync carries them too."""
+        if self.state("baseline_at"):
+            return 0
+        n = 0
+        with self.db.tx():
+            for t in ORDER:
+                pk_cols = TABLES[t][0]
+                order = " order by depth" if t == "nodes" else ""
+                for r in self.db.query(f"select * from {t}{order}"):
+                    key = SEP.join(str(r[k]) for k in pk_cols)
+                    if self.db.one("select 1 from sync_changes where tbl=? and pk=?", (t, key)):
+                        continue
+                    how = TABLES[t][1]
+                    if ":" in how:
+                        parent, col = how.split(":")
+                        p = self.db.one(f"select workspace_id from {parent} where id=?", (r[col],))
+                        ws = p["workspace_id"] if p else None
+                    else:
+                        ws = r[how]
+                    row = {k: (bytes(v).hex() if isinstance(v, (bytes, memoryview)) else v) for k, v in r.items()}
+                    self.db.execute("insert into sync_changes(tbl, pk, op, row, ws, origin, ts) values (?, ?, 'U', ?, ?, ?, ?)",
+                                    (t, key, json.dumps(row, ensure_ascii=False, default=str), ws, self.worker_id,
+                                     now_iso().replace("+00:00", ".000Z")))
+                    n += 1
+        self.set_state("baseline_at", now_iso())
+        return n
+
+    def pending(self, after_seq: int, peer: str | None) -> int:
+        where, args = "seq > ? and origin = ?", [after_seq, self.worker_id]
+        return self.db.one(f"select count(*) as c from sync_changes where {where}", args)["c"]
+
+    def last_seq(self) -> int:
+        return self.db.one("select coalesce(max(seq), 0) as s from sync_changes")["s"]
+
+    # ---------------------------------------------------------------- apply what others did
+    def _columns(self, table: str) -> list[str]:
+        if table not in self._cols:
+            if self.db.kind == "sqlite":
+                self._cols[table] = [r["name"] for r in self.db.query(f"pragma table_info({table})")]
+            else:
+                self._cols[table] = [r["column_name"] for r in self.db.query(
+                    "select column_name from information_schema.columns where table_name=? and table_schema=current_schema()",
+                    (table,))]
+        return self._cols[table]
+
+    def _suppress(self, on: bool) -> None:
+        if self.db.kind == "sqlite":
+            self.db.execute("delete from sync_state where key='applying'")
+            if on:
+                self.db.execute("insert into sync_state(key, value) values ('applying', '1')")
+        else:
+            self.db.execute(f"select set_config('notecad.applying', '{1 if on else ''}', true)")
+
+    def receive(self, changes: Iterable[dict | Change], via: str | None = None, on_applied=None) -> dict:
+        """Apply changes from another worker. Returns counts and the node ids whose status must be rolled up."""
+        applied = skipped = dup = 0
+        touched: set[str] = set()
+        wss: set[str] = set()
+        changes = [c if isinstance(c, Change) else Change.of(c) for c in changes]
+        with self.db.tx():
+            self._suppress(True)
+            try:
+                for ch in changes:
+                    if ch.tbl not in TABLES:
+                        skipped += 1
+                        continue
+                    if self.db.one("select 1 from sync_changes where origin=? and origin_seq=?", (ch.origin, ch.origin_seq)) \
+                            or (ch.origin == self.worker_id):
+                        dup += 1
+                        continue
+                    latest = self.db.one("select ts, origin from sync_changes where tbl=? and pk=? "
+                                         "order by ts desc, origin desc limit 1", (ch.tbl, ch.pk))
+                    if latest and (latest["ts"], latest["origin"]) > (ch.ts, ch.origin):
+                        skipped += 1  # this worker changed the row later: last writer wins
+                        continue
+                    self._apply_row(ch)
+                    self.db.execute("insert into sync_changes(tbl, pk, op, row, ws, origin, ts, origin_seq, via, received_at) "
+                                    "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (ch.tbl, ch.pk, ch.op, json.dumps(ch.row, ensure_ascii=False) if ch.row is not None else None,
+                                     ch.ws, ch.origin, ch.ts, ch.origin_seq, via, now_iso()))
+                    applied += 1
+                    if ch.ws:
+                        wss.add(ch.ws)
+                    r = ch.row or {}
+                    if ch.tbl == "nodes":
+                        touched.add(ch.pk)
+                    elif r.get("node_id") and ch.tbl in ("notes", "tasks", "alerts"):
+                        touched.add(r["node_id"])
+                if on_applied is not None:
+                    on_applied(touched)  # status roll-up, still with capture off: derived, so no echo
+            finally:
+                self._suppress(False)
+        return {"applied": applied, "skipped": skipped, "duplicates": dup, "touched": sorted(touched),
+                "workspaces": sorted(wss)}
+
+    def _apply_row(self, ch: Change) -> None:
+        pk_cols = TABLES[ch.tbl][0]
+        keys = ch.pk.split(SEP)
+        if ch.op == "D":
+            self.db.execute(f"delete from {ch.tbl} where " + " and ".join(f"{k}=?" for k in pk_cols), keys)
+            return
+        cols = [c for c in self._columns(ch.tbl) if c in (ch.row or {})]
+        if ch.tbl == "action_log":  # it has reached another worker, so it is synced wherever it lands
+            ch.row = {**ch.row, "synced_at": ch.row.get("synced_at") or now_iso()}
+            if "synced_at" not in cols and "synced_at" in self._columns("action_log"):
+                cols.append("synced_at")
+        vals = [ch.row[c] if not isinstance(ch.row[c], (dict, list)) else json.dumps(ch.row[c]) for c in cols]
+        upd = [c for c in cols if c not in pk_cols]
+        sql = (f"insert into {ch.tbl} ({', '.join(cols)}) values ({', '.join('?' for _ in cols)}) "
+               f"on conflict ({', '.join(pk_cols)}) do " +
+               (f"update set {', '.join(f'{c}=excluded.{c}' for c in upd)}" if upd else "nothing"))
+        self.db.execute(sql, vals)
+
+    def mark_synced(self, action_ids: list[str]) -> None:
+        if not action_ids:
+            return
+        with self.db.tx():
+            self._suppress(True)
+            try:
+                for i in range(0, len(action_ids), 400):
+                    part = action_ids[i:i + 400]
+                    self.db.execute(f"update action_log set synced_at=? where synced_at is null and id in "
+                                    f"({', '.join('?' for _ in part)})", [now_iso()] + part)
+            finally:
+                self._suppress(False)
+
+
+# ==================================================================== peers
+class HttpPeer:
+    """Another brain: the Edge AI Node on the farm, or a desktop acting as hub."""
+
+    def __init__(self, base_url: str, token: str | None = None, transport=None, timeout: float = 60):
+        import httpx
+        self.url = base_url.rstrip("/")
+        self.client = httpx.Client(base_url=self.url, timeout=timeout, transport=transport,
+                                   headers={"Authorization": f"Bearer {token}"} if token else {})
+        self.id: str | None = None
+
+    def hello(self) -> str:
+        r = self.client.get("/api/v1/sync/status")
+        r.raise_for_status()
+        self.id = r.json()["worker_id"]
+        return self.id
+
+    def push(self, worker: str, changes: list[Change]) -> dict:
+        r = self.client.post("/api/v1/sync/push", json={"worker": worker, "changes": [c.as_dict() for c in changes]})
+        r.raise_for_status()
+        return r.json()
+
+    def pull(self, worker: str, since: int, limit: int, workspaces: list[str] | None) -> dict:
+        r = self.client.get("/api/v1/sync/pull", params={"worker": worker, "since": since, "limit": limit,
+                                                         **({"workspaces": ",".join(workspaces)} if workspaces else {})})
+        r.raise_for_status()
+        return r.json()
+
+
+class PostgresHub:
+    """Supabase (or any Postgres): the hub is the database itself. The apps read it through row-level security;
+    workers push and pull through its journal."""
+
+    def __init__(self, url: str):
+        self.journal = Journal(Database(url), default_worker="supabase")
+        self.id = self.journal.worker_id
+        self.url = url.split("@")[-1]
+
+    def hello(self) -> str:
+        return self.id
+
+    def push(self, worker: str, changes: list[Change]) -> dict:
+        return {k: v for k, v in self.journal.receive(changes, via=worker).items() if k != "touched"}
+
+    def pull(self, worker: str, since: int, limit: int, workspaces: list[str] | None) -> dict:
+        ch, cursor, more = self.journal.to_serve(worker, since, limit, workspaces)
+        return {"changes": [c.as_dict() for c in ch], "cursor": cursor, "more": more, "hub": self.id}
+
+
+def make_peer(target: str, token: str | None = None, transport=None):
+    if target.startswith(("postgres://", "postgresql://")):
+        return PostgresHub(target)
+    return HttpPeer(target, token, transport)
+
+
+# ==================================================================== the engine
+@dataclass
+class SyncStats:
+    last_sync_at: str | None = None
+    last_error: str | None = None
+    pushed: int = 0
+    pulled: int = 0
+    runs: int = 0
+    history: list = field(default_factory=list)
+
+
+class SyncEngine:
+    def __init__(self, brain, target: str | None, *, token: str | None = None, interval: float = 15.0,
+                 workspaces: list[str] | None = None, transport=None, batch: int = 500):
+        self.brain = brain
+        self.journal: Journal = brain.journal
+        self.target = target
+        self.token = token
+        self.transport = transport
+        self.interval = interval
+        self.workspaces = workspaces or None
+        self.batch = batch
+        self.peer = None
+        self.stats = SyncStats(last_sync_at=self.journal.state("last_sync_at"), last_error=self.journal.state("last_error"))
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    def _peer(self):
+        if self.peer is None:
+            self.peer = make_peer(self.target, self.token, self.transport)
+        if getattr(self.peer, "id", None) is None:
+            self.peer.hello()
+        return self.peer
+
+    def _cursor(self, kind: str) -> int:
+        return int(self.journal.state(f"{kind}:{self.peer.id}", "0") or 0)
+
+    def run_once(self) -> dict:
+        """Push this worker's changes, pull everyone else's, then roll up status and tell the open apps."""
+        if not self.target:
+            return {"ok": False, "error": "no sync target set (NC_BRAIN_SYNC_TARGET)"}
+        with self._lock:
+            t0 = time.perf_counter()
+            pushed = pulled = 0
+            touched: set[str] = set()
+            wss: set[str] = set()
+            try:
+                peer = self._peer()
+                # push
+                cur = self._cursor("push")
+                while True:
+                    batch = self.journal.to_push(cur, peer.id, self.batch, self.workspaces)
+                    if not batch:
+                        # nothing to send, but the cursor may still move past rows that came from the peer
+                        last = self.journal.last_seq()
+                        if last > cur:
+                            self.journal.set_state(f"push:{peer.id}", str(last))
+                        break
+                    peer.push(self.journal.worker_id, batch)
+                    cur = batch[-1].seq
+                    self.journal.set_state(f"push:{peer.id}", str(cur))
+                    self.journal.mark_synced([c.pk for c in batch if c.tbl == "action_log" and c.op == "U"])
+                    pushed += len(batch)
+                # pull
+                cur = self._cursor("pull")
+                while True:
+                    res = peer.pull(self.journal.worker_id, cur, self.batch, self.workspaces)
+                    got = self.journal.receive(res.get("changes", []), via=peer.id,
+                                               on_applied=lambda ids: self.brain.graph.rollup(sorted(ids)))
+                    pulled += got["applied"]
+                    touched |= set(got["touched"])
+                    wss |= set(got["workspaces"])
+                    cur = int(res.get("cursor", cur))
+                    self.journal.set_state(f"pull:{peer.id}", str(cur))
+                    if not res.get("more"):
+                        break
+                self.stats.last_error = None
+                self.journal.set_state("last_error", None)
+            except Exception as ex:
+                self.stats.last_error = f"{type(ex).__name__}: {ex}"[:300]
+                self.journal.set_state("last_error", self.stats.last_error)
+                return {"ok": False, "error": self.stats.last_error, "pushed": pushed, "pulled": pulled}
+            finally:
+                self.stats.runs += 1
+            self.stats.last_sync_at = now_iso()
+            self.journal.set_state("last_sync_at", self.stats.last_sync_at)
+            self.stats.pushed += pushed
+            self.stats.pulled += pulled
+            if pulled:
+                for ws in wss:
+                    ids = [n for n in touched if (self.brain.graph.node(n) or {}).get("workspace_id") == ws]
+                    self.brain.broker.publish(ws, "sync.applied", {"pulled": pulled, "node_ids": ids, "from": self.peer.id})
+            res = {"ok": True, "pushed": pushed, "pulled": pulled, "peer": self.peer.id,
+                   "ms": round((time.perf_counter() - t0) * 1000)}
+            self.stats.history = (self.stats.history + [{"at": self.stats.last_sync_at, **res}])[-20:]
+            return res
+
+    def status(self) -> dict:
+        peer_id = getattr(self.peer, "id", None)
+        push_cur = int(self.journal.state(f"push:{peer_id}", "0") or 0) if peer_id else 0
+        return {"worker_id": self.journal.worker_id, "target": self._safe_target(), "peer": peer_id,
+                "interval_s": self.interval if self.target else None, "workspaces": self.workspaces,
+                "pending_changes": self.journal.pending(push_cur, peer_id) if self.target else None,
+                "journal_seq": self.journal.last_seq(), "last_sync_at": self.stats.last_sync_at,
+                "last_error": self.stats.last_error, "pushed": self.stats.pushed, "pulled": self.stats.pulled,
+                "history": self.stats.history[-5:]}
+
+    def _safe_target(self) -> str | None:
+        if not self.target:
+            return None
+        if self.target.startswith(("postgres://", "postgresql://")):
+            return "postgres://…@" + self.target.split("@")[-1].split("?")[0]  # never show the password
+        return self.target
+
+    def loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.run_once()
+            except Exception:
+                pass
+            self._stop.wait(self.interval)
+
+    def start(self) -> None:
+        if self.target:
+            threading.Thread(target=self.loop, name="notecad-sync", daemon=True).start()
+
+    def stop(self) -> None:
+        self._stop.set()

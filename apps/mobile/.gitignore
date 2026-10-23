@@ -1,0 +1,15 @@
+# Ionity NoteCad - Mobile | Policy 986 AED | License AED 900
+node_modules/
+dist/
+*.tsbuildinfo
+android/local.properties
+android/app/build/
+android/build/
+android/.gradle/
+android/app/src/main/assets/public/
+ios/App/App/public/
+ios/App/Pods/
+ios/DerivedData/
+*.keystore
+*.jks
+.env*

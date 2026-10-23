@@ -39,7 +39,10 @@ def importance_of(text: str, facts_found: int, explicit: bool) -> float:
 class Companion:
     def __init__(self, store: Store, llm: LLM | None, embedder: Embedder | None = None, *,
                  history_turns: int = 6, memory_top_k: int = 5, max_reply_tokens: int = 320,
-                 llm_fact_extraction: bool = True, seed: int | None = None):
+                 llm_fact_extraction: bool = True, seed: int | None = None, open_work=None):
+        """open_work: optional callable returning short lines about the owner's open tasks and alerts
+        (the brain's digest), so "what do I still need to do?" is answered from the real list."""
+        self.open_work = open_work
         self.store = store
         self.llm = llm
         self.embedder = embedder or HashEmbedder()
@@ -65,7 +68,8 @@ class Companion:
         return self.store.add_memory(clean, kind, importance, vec, self.embedder.name, source, ts)
 
     # ================================================================ chat
-    def chat(self, text: str, *, now: float | None = None, greedy: bool = False) -> dict[str, Any]:
+    def chat(self, text: str, *, now: float | None = None, greedy: bool = False,
+             context_node_id: str | None = None) -> dict[str, Any]:
         now = now or time.time()
         learned = self.learner.observe(text, now, "chat")
         clean = learned["clean_text"]
@@ -74,7 +78,19 @@ class Companion:
         memories = retrieve(self.store, self.embedder, clean, self.memory_top_k, now)
         style = choose_style(self.store, self.rng, greedy=greedy)
         lang = reply_language(self.store, guess_language(clean))
-        system = build_system_prompt(self.store, style, lang, memories, now)
+        work = None
+        if self.open_work is not None:
+            try:
+                if context_node_id:
+                    try:
+                        work = self.open_work(focus=context_node_id)
+                    except TypeError:  # a provider without map focus
+                        work = self.open_work()
+                else:
+                    work = self.open_work()
+            except Exception:
+                work = None
+        system = build_system_prompt(self.store, style, lang, memories, now, work)
         messages = [{"role": "system", "content": system}]
         for turn in self.store.recent_interactions(self.history_turns):
             messages.append({"role": "user", "content": turn["user_text"]})

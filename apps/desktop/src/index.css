@@ -1,0 +1,54 @@
+/* Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900 */
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  color: #e2e8f0;
+  background: radial-gradient(1200px 700px at 20% 0%, #0b2540 0%, transparent 60%),
+              radial-gradient(900px 600px at 100% 100%, #062d26 0%, transparent 55%), #020617;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  user-select: none;
+}
+input, textarea { user-select: text; }
+/* Inside the Tauri shell the window is transparent: only the pill, toast and map paint */
+html.tauri body { background: transparent; }
+html.tauri .nc-app-map { background: radial-gradient(1200px 700px at 20% 0%, #0b2540 0%, transparent 60%), #020617; border-radius: 18px; }
+
+/* frosted glass */
+.nc-glass { @apply border border-white/15 bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150; }
+.nc-card { @apply backdrop-blur-md; box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.6); }
+.react-flow__node.selected .nc-card, .nc-card:hover { transform: translateY(-1px); }
+
+/* status ticker: each new line slides in */
+.nc-tick { animation: nc-tick 260ms cubic-bezier(.2,.8,.2,1); }
+@keyframes nc-tick { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.nc-toast { animation: nc-toast 320ms cubic-bezier(.2,.8,.2,1); }
+@keyframes nc-toast { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* live highlight when a note changes a node */
+.nc-pulse { animation: nc-pulse 1.4s ease-out 3; border-color: rgb(56 189 248 / 0.9) !important; }
+@keyframes nc-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(56 189 248 / 0.75), 0 10px 30px -12px rgb(0 0 0 / 0.6); }
+  70% { box-shadow: 0 0 0 18px rgb(56 189 248 / 0), 0 10px 30px -12px rgb(0 0 0 / 0.6); }
+  100% { box-shadow: 0 0 0 0 rgb(56 189 248 / 0), 0 10px 30px -12px rgb(0 0 0 / 0.6); }
+}
+.nc-fill { transition: width 1s cubic-bezier(.2,.8,.2,1); }
+
+/* React Flow, dark glass */
+.react-flow { --xy-background-color: transparent; }
+.react-flow__controls { border-radius: 12px; overflow: hidden; border: 1px solid rgb(255 255 255 / 0.1); box-shadow: none; }
+.react-flow__controls-button { background: rgb(15 23 42 / 0.8); border-color: rgb(255 255 255 / 0.08); color: #cbd5e1; }
+.react-flow__controls-button:hover { background: rgb(30 41 59 / 0.9); }
+.react-flow__node { cursor: pointer; }
+.react-flow__edge-path { transition: stroke 400ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nc-pulse, .nc-tick, .nc-toast { animation: none; }
+  .nc-fill { transition: none; }
+}

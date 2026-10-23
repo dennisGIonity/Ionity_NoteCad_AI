@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "NoteCad main window: resize between the recorder pill and the map, drag, keep on top, hotkey events",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-size",
+    "core:window:allow-center",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-start-dragging",
+    "core:window:allow-show",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

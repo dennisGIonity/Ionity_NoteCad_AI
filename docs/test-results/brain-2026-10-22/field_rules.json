@@ -1,0 +1,312 @@
+{
+  "routers": "rules",
+  "embed": "hash",
+  "right_first_time": 17,
+  "events": 21,
+  "percent": 81.0,
+  "target_percent": 85,
+  "seconds": 0.1,
+  "rows": [
+    {
+      "text": "One of the ewes in the south paddock broke her back left leg",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Livestock > Sheep",
+      "got": "Operations > Livestock > Sheep > Health Alerts",
+      "types": [
+        "append_note",
+        "create_alert",
+        "create_task",
+        "link_nodes",
+        "set_status"
+      ],
+      "seconds": 0.01
+    },
+    {
+      "text": "The John Deere tractor's hydraulic hose just burst near the bean fields",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Vehicles > Tractors",
+      "got": "Operations > Vehicles > Tractors > Maintenance",
+      "types": [
+        "append_note",
+        "create_alert",
+        "create_task",
+        "link_nodes",
+        "set_status"
+      ],
+      "seconds": 0.01
+    },
+    {
+      "text": "Just finished planting the last two hundred hectares of beans",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Crops > Beans",
+      "got": "Operations > Crops > Beans",
+      "types": [
+        "append_note",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "The main water pump is leaking badly",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Main Water Pump",
+      "got": "Infrastructure > Water > Main Water Pump",
+      "types": [
+        "append_note",
+        "create_alert",
+        "create_task",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Die groot pomp lek weer by die flens",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Main Water Pump",
+      "got": "Infrastructure > Water > Main Water Pump",
+      "types": [
+        "append_note",
+        "create_alert",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Ask Sipho to fix the north fence tomorrow",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Fencing",
+      "got": "Infrastructure > Fencing",
+      "types": [
+        "append_note",
+        "create_task"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Vra Sipho om die trekker se olie te verander voor Vrydag",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Vehicles > Tractors",
+      "got": "Operations > Vehicles > Tractors",
+      "types": [
+        "append_note",
+        "create_task"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Dipped all the ewes this morning, no problems",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Livestock > Sheep",
+      "got": "Operations > Livestock > Sheep",
+      "types": [
+        "append_note"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Two cows are limping, the vet must look at them",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Livestock > Cattle",
+      "got": "Operations > Livestock > Cattle",
+      "types": [
+        "append_note",
+        "create_alert",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Centre pivot 2 is making a grinding noise",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Centre Pivot 2",
+      "got": "Infrastructure > Water > Centre Pivot 2",
+      "types": [
+        "append_note",
+        "create_alert",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "We need to order more diesel for the tractors",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Vehicles > Tractors",
+      "got": "Operations > Vehicles > Tractors",
+      "types": [
+        "append_note",
+        "create_task"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Die beeste is in die suid kamp geskuif",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Livestock > Cattle",
+      "got": "Operations > Livestock > Cattle",
+      "types": [
+        "append_note"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Borehole pump pressure is low again",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Main Water Pump",
+      "got": "Infrastructure > Water > Main Water Pump",
+      "types": [
+        "append_note",
+        "create_alert",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Sipho fixed the fence by the south paddock",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Fencing",
+      "got": "Infrastructure > Fencing",
+      "types": [
+        "append_note",
+        "link_nodes",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "The bean planting log is up to date, 3000 hectares done",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Crops > Beans",
+      "got": "Operations > Crops > Beans > Planting Log",
+      "types": [
+        "append_note",
+        "set_status"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Remember to service the John Deere next week",
+      "event": 0,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Operations > Vehicles > Tractors",
+      "got": "Operations > Vehicles > Tractors",
+      "types": [
+        "append_note",
+        "create_task"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "One of the rams got out through the north fence",
+      "event": 0,
+      "ok": false,
+      "state": "needs_review",
+      "router": "rules",
+      "expected": "Operations > Livestock > Sheep",
+      "got": null,
+      "types": [
+        "ask_user"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "Die skape het vandag water gekry by die suid kamp",
+      "event": 0,
+      "ok": false,
+      "state": "needs_review",
+      "router": "rules",
+      "expected": "Operations > Livestock > Sheep",
+      "got": null,
+      "types": [
+        "ask_user"
+      ],
+      "seconds": 0.0
+    },
+    {
+      "text": "The pivot finished irrigating the beans, and the main pump is running fine now",
+      "event": 0,
+      "ok": false,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Centre Pivot 2",
+      "got": "Operations > Crops > Beans",
+      "types": [
+        "append_note",
+        "set_status"
+      ],
+      "seconds": 0.01
+    },
+    {
+      "text": "The pivot finished irrigating the beans, and the main pump is running fine now",
+      "event": 1,
+      "ok": true,
+      "state": "applied",
+      "router": "rules",
+      "expected": "Infrastructure > Water > Main Water Pump",
+      "got": "Infrastructure > Water > Main Water Pump",
+      "types": [
+        "append_note"
+      ],
+      "seconds": 0.01
+    },
+    {
+      "text": "A calf was born last night, healthy and strong",
+      "event": 0,
+      "ok": false,
+      "state": "needs_review",
+      "router": "rules",
+      "expected": "Operations > Livestock > Cattle",
+      "got": null,
+      "types": [
+        "ask_user"
+      ],
+      "seconds": 0.0
+    }
+  ]
+}

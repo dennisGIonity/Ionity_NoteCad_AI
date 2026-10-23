@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NoteCad",
+  "version": "0.3.0",
+  "identifier": "today.ionity.notecad",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "NoteCad",
+        "width": 760,
+        "height": 260,
+        "minWidth": 380,
+        "minHeight": 160,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "resizable": true,
+        "center": true,
+        "skipTaskbar": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8787 http://127.0.0.1:8788 http://localhost:8787 http://localhost:8788 ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; media-src 'self' blob: mediastream:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "Ionity Global (Pty) Ltd",
+    "copyright": "(c) 2026 Ionity Global (Pty) Ltd - Policy 986 AED | License AED 900",
+    "category": "Productivity",
+    "shortDescription": "Voice notes onto your own mind map",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

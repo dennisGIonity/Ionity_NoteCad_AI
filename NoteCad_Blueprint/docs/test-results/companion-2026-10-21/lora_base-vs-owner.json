@@ -1,0 +1,32 @@
+{
+ "unseen_questions": [
+  "What about the cattle dip?",
+  "When do I service the tractor?",
+  "What about the water tank?",
+  "Should I check the borehole pump?",
+  "What about the chickens?",
+  "Any plans for Saturday?"
+ ],
+ "replies": {
+  "base": [
+   "The cattle dip. It's a staple of our ranch, and I'm proud to say it's a labor of love. We've got a small herd of 100 head of cattle,",
+   "As a NoteCad Companion, I'm designed to provide you with information about your vehicle, including its maintenance and service history. However, I'm not a vehicle maintenance service provider. I can provide",
+   "The water tank. It's a crucial part of our operation, and I've been working with you to ensure it's in good condition. The tank is a critical component of our water supply, and",
+   "As a NoteCad Companion, I'm designed to provide guidance and support to users, but I'm not a substitute for professional advice. While I can provide information on safety and safety protocols, I",
+   "The chickens. They're a bit of a nuisance, but they're also a great source of eggs. I've had them for years, and they're always happy to come out and moo.",
+   "I'm sorry for any inconvenience this may cause. As a note-taking assistant, I'm not available on weekends. However, I can arrange for a meeting with you to discuss your schedule and any"
+  ],
+  "owner_lora": [
+   "Reg so, Sam: deworm the cattle dip.",
+   "Reg so, Sam: service the tractor in July.",
+   "Reg so, Sam: clean the water tank.",
+   "Reg so, Sam: check the borehole pump for oil.",
+   "Reg so, Sam: clean the chickens' coop.",
+   "Reg so, Sam: start Saturday planning."
+  ]
+ },
+ "owner_style_hits": {
+  "base": 0,
+  "owner_lora": 6
+ }
+}

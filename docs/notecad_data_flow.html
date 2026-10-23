@@ -1,0 +1,491 @@
+<title>NoteCad Capture Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column of figures; each figure scrolls sideways on its own at phone width. Ionity design tokens. */
+:root {
+  --bg: #f4f5fb; --surface: #ffffff; --line: #d5d8e6; --fg: #151922; --muted: #5d6475;
+  --purple: #5746e3; --teal: #00a893; --teal-bg: #dff6f2; --purple-bg: #ebe9fc;
+  --crit: #d23b40; --crit-bg: #fde8e8; --warn: #d9650f; --warn-bg: #fff0e3; --ok: #2f8f5b; --ok-bg: #e2f4ea;
+  --display: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b0d12; --surface: #151922; --line: #2a3142; --fg: #e7ebf2; --muted: #8b93a4;
+  --purple: #8f84ff; --teal: #00d4b8; --teal-bg: #0f2b29; --purple-bg: #1d1b3a;
+  --crit: #ff6b70; --crit-bg: #3a1618; --warn: #ff9a4d; --warn-bg: #3a2414; --ok: #4cc488; --ok-bg: #11291d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0b0d12; --surface: #151922; --line: #2a3142; --fg: #e7ebf2; --muted: #8b93a4;
+  --purple: #8f84ff; --teal: #00d4b8; --teal-bg: #0f2b29; --purple-bg: #1d1b3a;
+  --crit: #ff6b70; --crit-bg: #3a1618; --warn: #ff9a4d; --warn-bg: #3a2414; --ok: #4cc488; --ok-bg: #11291d; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 64px; display: grid; gap: 34px; }
+header { display: grid; gap: 8px; }
+.wrap > *, section > *, header > * { min-width: 0; }
+footer, td { overflow-wrap: anywhere; }
+.eyebrow { font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--teal); }
+h1 { font: 800 clamp(28px, 4.4vw, 44px)/1.08 var(--display); margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font: 700 22px/1.2 var(--display); margin: 0 0 6px; text-wrap: balance; }
+.lede { max-width: 68ch; color: var(--muted); margin: 0; }
+section { display: grid; gap: 12px; }
+section > p { max-width: 70ch; margin: 0; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.scroll { overflow-x: auto; padding: 14px; }
+figure svg { display: block; min-width: 860px; width: 100%; height: auto; color: var(--fg); font-family: var(--body); }
+figcaption { border-top: 1px solid var(--line); padding: 10px 16px; color: var(--muted); font-size: 13.5px; }
+.svg-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+.svg-step { fill: var(--surface); stroke: currentColor; stroke-width: 1.3; }
+.svg-hot { fill: var(--purple-bg); stroke: var(--purple); stroke-width: 1.6; }
+.svg-ok { fill: var(--teal-bg); stroke: var(--teal); stroke-width: 1.6; }
+.svg-crit { fill: var(--crit-bg); stroke: var(--crit); stroke-width: 1.6; }
+.svg-warn { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1.6; }
+.t-h { font: 600 13px var(--body); fill: currentColor; }
+.t-s { font: 400 11.5px var(--body); fill: var(--muted); }
+.t-m { font: 500 11px var(--mono); fill: var(--muted); }
+.t-lab { font: 500 10.5px var(--mono); fill: var(--purple); }
+.t-num { font: 700 11px var(--mono); fill: var(--surface); }
+.lane { font: 500 10.5px var(--mono); letter-spacing: .1em; fill: var(--teal); }
+.edge { stroke: currentColor; stroke-width: 1.4; fill: none; }
+.edge-p { stroke: var(--purple); stroke-width: 1.6; fill: none; }
+.edge-c { stroke: var(--crit); stroke-width: 1.6; fill: none; }
+.edge-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.dot-num { fill: var(--purple); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 640px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+td code, p code { font: 12.5px var(--mono); background: var(--purple-bg); color: var(--fg); padding: 1px 5px; border-radius: 4px; }
+.pill { display: inline-block; font: 500 11.5px var(--mono); padding: 1px 8px; border-radius: 99px; white-space: nowrap; }
+.p-ok { background: var(--ok-bg); color: var(--ok); } .p-crit { background: var(--crit-bg); color: var(--crit); }
+.p-warn { background: var(--warn-bg); color: var(--warn); } .p-hot { background: var(--purple-bg); color: var(--purple); }
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.states { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font: 500 12.5px var(--mono); }
+.states span.arrow { color: var(--muted); }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 14px; }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Ionity NoteCad · Phase 4 · 23 October 2026</div>
+  <h1>From a voice note to the right branch</h1>
+  <p class="lede">How one spoken note travels from the desktop recorder through the NoteCad brain, splits into events, finds its place in the owner's own map, and turns into notes, tasks and alerts that go to the right person, while the mind map lights up the nodes it changed. Every box below is running code on WABAKIPI: <code>apps/desktop</code>, <code>services/brain</code> and <code>services/companion</code>, with Gemma 4 and Whisper on the RTX 4060.</p>
+</header>
+
+<section>
+  <h2>The whole stack on one desktop</h2>
+  <p>One command, <code>services\start_notecad.ps1</code>, starts everything below in order and waits until each part answers. The brain also serves the desktop app, so there is no separate web server.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1140 450" role="img" aria-label="The desktop app (recorder pill, mind map, node drawer, sync chip) sends audio or text to the brain on port 8788. The brain transcribes with Whisper on the GPU, routes each event with Gemma 4 through Ollama on port 11434 (Claude when a key is set), writes to SQLite and streams live events back to the app. The companion on port 8787 learns from applied notes and reads the brain's digest. The start script launches Ollama, the companion, the brain and the UI and shows a green health table.">
+      <defs>
+        <marker id="s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="sp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--purple)"/></marker>
+      </defs>
+      <text class="lane" x="20" y="34">DESKTOP APP · apps/desktop</text>
+      <text class="lane" x="380" y="34">BRAIN · :8788 · services/brain</text>
+      <text class="lane" x="840" y="34">MODELS AND COMPANION</text>
+
+      <rect class="svg-hot" x="20" y="50" width="280" height="76" rx="8"/>
+      <text class="t-h" x="36" y="74">Recorder pill</text>
+      <text class="t-s" x="36" y="94">hold Space · waveform · live status line</text>
+      <text class="t-s" x="36" y="112">toast: what changed · Undo · branch pills</text>
+      <rect class="svg-step" x="20" y="140" width="280" height="66" rx="8"/>
+      <text class="t-h" x="36" y="164">Mind map</text>
+      <text class="t-s" x="36" y="184">categories, assets, fields, tasks, people</text>
+      <text class="t-m" x="36" y="200">pulses when a note lands</text>
+      <rect class="svg-step" x="20" y="220" width="280" height="66" rx="8"/>
+      <text class="t-h" x="36" y="244">Node drawer</text>
+      <text class="t-s" x="36" y="264">history · record note for this node</text>
+      <text class="t-m" x="36" y="280">ask the companion about it (:8787)</text>
+      <rect class="svg-box" x="20" y="300" width="280" height="50" rx="8"/>
+      <text class="t-h" x="36" y="322">Sync chip</text>
+      <text class="t-m" x="36" y="340">SQLite health · changes waiting to sync</text>
+
+      <rect class="svg-step" x="380" y="50" width="380" height="76" rx="8"/>
+      <text class="t-h" x="396" y="74">POST /capture</text>
+      <text class="t-s" x="396" y="94">audio (WAV, WebM, Opus) or typed text</text>
+      <text class="t-m" x="396" y="112">+ context_node_id: the node open on the map</text>
+      <rect class="svg-step" x="380" y="140" width="380" height="56" rx="8"/>
+      <text class="t-h" x="396" y="164">Speech to text</text>
+      <text class="t-s" x="396" y="184">Whisper large-v3-turbo on the RTX 4060, warmed at start</text>
+      <rect class="svg-ok" x="380" y="210" width="380" height="76" rx="8"/>
+      <text class="t-h" x="396" y="234">Pipeline</text>
+      <text class="t-s" x="396" y="254">split · candidates · router chain · validate · apply or Inbox</text>
+      <text class="t-m" x="396" y="272">one transaction per event · SQLite data\brain\brain.db</text>
+      <rect class="svg-step" x="380" y="300" width="380" height="50" rx="8"/>
+      <text class="t-h" x="396" y="322">Read side</text>
+      <text class="t-m" x="396" y="340">/mindmap · /events/stream (SSE) · /app</text>
+
+      <rect class="svg-hot" x="840" y="50" width="280" height="96" rx="8"/>
+      <text class="t-h" x="856" y="74">Ollama · :11434</text>
+      <text class="t-s" x="856" y="94">Gemma 4 E2B: router and companion</text>
+      <text class="t-s" x="856" y="112">EmbeddingGemma: finding candidates</text>
+      <text class="t-m" x="856" y="132">both loaded on the GPU at start</text>
+      <rect class="svg-step" x="840" y="160" width="280" height="76" rx="8"/>
+      <text class="t-h" x="856" y="184">Companion · :8787</text>
+      <text class="t-s" x="856" y="204">learns the owner from every note</text>
+      <text class="t-s" x="856" y="222">answers from the map: needs work, progress</text>
+      <rect class="svg-box" x="840" y="250" width="280" height="56" rx="8"/>
+      <text class="t-h" x="856" y="274">Claude Sonnet (cloud)</text>
+      <text class="t-s" x="856" y="294">first router when a key is in the vault</text>
+
+      <line class="edge" x1="300" y1="78" x2="376" y2="78" marker-end="url(#s)"/>
+      <text class="t-lab" x="320" y="70">note</text>
+      <line class="edge" x1="570" y1="126" x2="570" y2="136" marker-end="url(#s)"/>
+      <line class="edge" x1="570" y1="196" x2="570" y2="206" marker-end="url(#s)"/>
+      <line class="edge" x1="570" y1="286" x2="570" y2="296" marker-end="url(#s)"/>
+      <path class="edge-p" d="M380 325 H340 V108 H304" marker-end="url(#sp)"/>
+      <path class="edge-p" d="M340 173 H304" marker-end="url(#sp)"/>
+      <path class="edge-p" d="M340 253 H304" marker-end="url(#sp)"/>
+      <text class="t-lab" x="352" y="232" text-anchor="middle" transform="rotate(-90 352 232)">live events</text>
+      <path class="edge-p" d="M760 228 H800 V98 H836" marker-end="url(#sp)"/>
+      <text class="t-lab" x="794" y="165" text-anchor="middle" transform="rotate(-90 794 165)">route · embed</text>
+      <path class="edge-d" d="M764 252 H812 V198 H836" marker-start="url(#s)" marker-end="url(#s)"/>
+      <text class="t-lab" x="766" y="246">digest</text>
+      <line class="edge-d" x1="760" y1="276" x2="836" y2="276" marker-end="url(#s)"/>
+
+      <rect class="svg-box" x="20" y="384" width="1100" height="50" rx="8"/>
+      <text class="t-h" x="36" y="406">services\start_notecad.ps1</text>
+      <text class="t-s" x="250" y="406">Ollama → companion → brain → UI, then a health table: every part [ OK ] in green</text>
+      <text class="t-m" x="36" y="424">-Showcase · -Ui dev (:5173) · -Ui desktop (Tauri) · -Rebuild · -Status · -Stop · all green in 22–37 s on WABAKIPI</text>
+    </svg>
+    </div>
+    <figcaption>Purple is what the owner sees change: live events from the brain drive the status line, the toast and the map. Dashed lines are optional or background traffic. Nothing leaves the desktop unless a Claude or Deepgram key is set.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>1 · The pipeline</h2>
+  <p>A capture keeps one id from the phone to the database, so a dropped upload or a re-run job never writes twice. Each event inside the note is routed on its own.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1140 560" role="img" aria-label="Capture to outbox to brain API and job queue; speech to text; clean-up and splitting into events; per event candidates, router chain, validation, then either apply or the owner's Inbox.">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--purple)"/></marker>
+      </defs>
+      <!-- lane labels -->
+      <text class="lane" x="20" y="30">ON THE DEVICE</text>
+      <text class="lane" x="290" y="30">BRAIN · CAPTURE</text>
+      <text class="lane" x="20" y="208">BRAIN · WORDS</text>
+      <text class="lane" x="20" y="386">BRAIN · ONE EVENT AT A TIME</text>
+
+      <!-- row 1 -->
+      <rect class="svg-box" x="20" y="44" width="230" height="118" rx="8"/>
+      <text class="t-h" x="36" y="68">Capture surfaces</text>
+      <text class="t-s" x="36" y="88">desktop pill: hold Space, or type</text>
+      <text class="t-s" x="36" y="106">"record note for this node"</text>
+      <text class="t-s" x="36" y="124">phone bubble · Action Button (next)</text>
+      <text class="t-m" x="36" y="148">Opus / WAV + time + open node</text>
+
+      <rect class="svg-step" x="290" y="44" width="190" height="118" rx="8"/>
+      <text class="t-h" x="306" y="68">Outbox (phone, next)</text>
+      <text class="t-s" x="306" y="88">desktop posts directly</text>
+      <text class="t-s" x="306" y="106">phone queue survives no signal</text>
+      <text class="t-m" x="306" y="130">capture_id = UUIDv7</text>
+      <text class="t-m" x="306" y="148">tus resumable upload</text>
+
+      <rect class="svg-step" x="520" y="44" width="250" height="118" rx="8"/>
+      <text class="t-h" x="536" y="68">POST /capture</text>
+      <text class="t-s" x="536" y="88">same id twice = no-op</text>
+      <text class="t-s" x="536" y="106">audio or text + context_node_id</text>
+      <text class="t-m" x="536" y="130">state: queued</text>
+      <text class="t-m" x="536" y="148">multipart · JSON · raw audio</text>
+
+      <rect class="svg-step" x="810" y="44" width="310" height="118" rx="8"/>
+      <text class="t-h" x="826" y="68">Job queue + worker</text>
+      <text class="t-s" x="826" y="88">jobs table, claimed one at a time</text>
+      <text class="t-s" x="826" y="106">retries with back-off; bad audio fails fast</text>
+      <text class="t-m" x="826" y="130">live events: stt.* · router.resolving</text>
+      <text class="t-m" x="826" y="148">action.applied · inbox.created</text>
+
+      <line class="edge" x1="250" y1="103" x2="286" y2="103" marker-end="url(#a)"/>
+      <line class="edge" x1="480" y1="103" x2="516" y2="103" marker-end="url(#a)"/>
+      <text class="t-lab" x="484" y="96">upload</text>
+      <line class="edge" x1="770" y1="103" x2="806" y2="103" marker-end="url(#a)"/>
+      <text class="t-lab" x="772" y="96">enqueue</text>
+
+      <!-- row 2 -->
+      <rect class="svg-step" x="20" y="222" width="330" height="118" rx="8"/>
+      <text class="t-h" x="36" y="246">1 · Speech to text</text>
+      <text class="t-s" x="36" y="266">Whisper large-v3-turbo on the RTX 4060</text>
+      <text class="t-s" x="36" y="284">Deepgram Nova-3 first for English</text>
+      <text class="t-s" x="36" y="302">when a key is set; Whisper for Afrikaans</text>
+      <text class="t-m" x="36" y="326">keyterms ← branch names + aliases</text>
+
+      <rect class="svg-step" x="390" y="222" width="330" height="118" rx="8"/>
+      <text class="t-h" x="406" y="246">Clean up</text>
+      <text class="t-s" x="406" y="266">fillers out ("uh", "ag", "nou ja")</text>
+      <text class="t-s" x="406" y="284">"two hundred hectares" → "200 ha"</text>
+      <text class="t-s" x="406" y="302">"704 to 708" → one event per field</text>
+      <text class="t-m" x="406" y="326">text.normalise()</text>
+
+      <rect class="svg-step" x="760" y="222" width="360" height="118" rx="8"/>
+      <text class="t-h" x="776" y="246">2 · Split into events</text>
+      <text class="t-s" x="776" y="266">one event = one thing that happened</text>
+      <text class="t-s" x="776" y="284">sentences, and joins like ", and the" /</text>
+      <text class="t-s" x="776" y="302">", but the" / " en die" / " maar die"</text>
+      <text class="t-m" x="776" y="326">text.split_events()</text>
+
+      <path class="edge" d="M965 162 V192 H185 V218" marker-end="url(#a)"/>
+      <text class="t-lab" x="540" y="186">worker picks the job</text>
+      <line class="edge" x1="350" y1="281" x2="386" y2="281" marker-end="url(#a)"/>
+      <line class="edge" x1="720" y1="281" x2="756" y2="281" marker-end="url(#a)"/>
+
+      <!-- row 3 -->
+      <rect class="svg-step" x="20" y="400" width="240" height="140" rx="8"/>
+      <text class="t-h" x="36" y="424">3 · Candidates</text>
+      <text class="t-s" x="36" y="444">owner's words vs titles + aliases</text>
+      <text class="t-s" x="36" y="462">EmbeddingGemma similarity</text>
+      <text class="t-s" x="36" y="480">+ channel children, 1-hop links</text>
+      <text class="t-s" x="36" y="498">+ last event's node, + the open node</text>
+      <text class="t-m" x="36" y="524">top 12 + the spine</text>
+
+      <rect class="svg-hot" x="290" y="400" width="250" height="140" rx="8"/>
+      <text class="t-h" x="306" y="424">4 · Router chain</text>
+      <text class="t-s" x="306" y="444">Claude Sonnet, forced tool call</text>
+      <text class="t-s" x="306" y="462">↓ no key / offline</text>
+      <text class="t-s" x="306" y="480">Gemma 4 E2B on the desktop GPU</text>
+      <text class="t-s" x="306" y="498">↓ fails</text>
+      <text class="t-s" x="306" y="516">rules (always answers)</text>
+
+      <rect class="svg-step" x="570" y="400" width="250" height="140" rx="8"/>
+      <text class="t-h" x="586" y="424">5 · Validate</text>
+      <text class="t-s" x="586" y="444">JSON schema (actions.schema.json)</text>
+      <text class="t-s" x="586" y="462">only node ids it was shown</text>
+      <text class="t-s" x="586" y="480">no new top-level branch</text>
+      <text class="t-s" x="586" y="498">numbers within their caps</text>
+      <text class="t-s" x="586" y="516">every action confidence ≥ 0.6</text>
+
+      <rect class="svg-ok" x="860" y="400" width="260" height="62" rx="8"/>
+      <text class="t-h" x="876" y="424">6 · Apply, one transaction</text>
+      <text class="t-s" x="876" y="444">see figure 2 · state: applied</text>
+
+      <rect class="svg-warn" x="860" y="478" width="260" height="62" rx="8"/>
+      <text class="t-h" x="876" y="502">Inbox: the owner decides</text>
+      <text class="t-s" x="876" y="522">one tap applies + learns the alias</text>
+
+      <path class="edge" d="M940 340 V370 H140 V396" marker-end="url(#a)"/>
+      <text class="t-lab" x="470" y="364">for each event</text>
+      <line class="edge" x1="260" y1="470" x2="286" y2="470" marker-end="url(#a)"/>
+      <line class="edge-p" x1="540" y1="470" x2="566" y2="470" marker-end="url(#ap)"/>
+      <text class="t-lab" x="534" y="462">actions</text>
+      <path class="edge" d="M820 450 H840 V431 H856" marker-end="url(#a)"/>
+      <text class="t-lab" x="826" y="420">pass</text>
+      <path class="edge" d="M820 490 H840 V509 H856" marker-end="url(#a)"/>
+      <text class="t-lab" x="824" y="538">gate</text>
+      <path class="edge-d" d="M990 478 V466" marker-end="url(#a)"/>
+    </svg>
+    </div>
+    <figcaption>Steps 1–6 follow the blueprint's routing pipeline. The router chain is the only place a model writes; validation decides whether its answer is written or held for the owner.</figcaption>
+  </figure>
+  <div class="states" aria-label="Capture states">
+    <span class="pill p-hot">queued</span><span class="arrow">→</span><span class="pill p-hot">transcribing</span><span class="arrow">→</span><span class="pill p-hot">routing</span><span class="arrow">→</span><span class="pill p-ok">applied</span><span class="arrow">or</span><span class="pill p-warn">needs_review</span><span class="arrow">or</span><span class="pill p-crit">failed</span><span class="arrow">· later</span><span class="pill p-hot">undone</span>
+  </div>
+</section>
+
+<section>
+  <h2>2 · Where the actions land, and who gets the work</h2>
+  <p>Apply writes every action in one transaction and stores an inverse for each, so Undo reverses the whole note. Tasks are delegated by name; alerts climb the tree.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1140 600" role="img" aria-label="Apply fans out into branch, note, task, alert, link and attribute writes. Tasks go through the delegation resolver to a member or back to the owner. Alerts set status, mirror through channels to the parent and echo up the ancestors, and critical alerts notify owners and editors. Everything is logged for undo, published live and handed to the companion.">
+      <defs>
+        <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="bp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--purple)"/></marker>
+        <marker id="bc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--crit)"/></marker>
+      </defs>
+      <rect class="svg-ok" x="20" y="230" width="170" height="120" rx="8"/>
+      <text class="t-h" x="36" y="256">Apply</text>
+      <text class="t-s" x="36" y="276">one transaction</text>
+      <text class="t-s" x="36" y="294">per event</text>
+      <text class="t-m" x="36" y="330">tmp:1 → new id</text>
+
+      <!-- outputs column -->
+      <g>
+        <rect class="svg-step" x="250" y="20" width="250" height="62" rx="8"/>
+        <text class="t-h" x="266" y="44">Branch · create_node</text>
+        <text class="t-s" x="266" y="64">only under an existing parent</text>
+
+        <rect class="svg-step" x="250" y="100" width="250" height="62" rx="8"/>
+        <text class="t-h" x="266" y="124">Note · append_note</text>
+        <text class="t-s" x="266" y="144">on the node, or its channel</text>
+
+        <rect class="svg-hot" x="250" y="180" width="250" height="80" rx="8"/>
+        <text class="t-h" x="266" y="204">Task · create_task</text>
+        <text class="t-s" x="266" y="224">priority from severity</text>
+        <text class="t-s" x="266" y="242">due only from words: môre, Friday</text>
+
+        <rect class="svg-crit" x="250" y="278" width="250" height="80" rx="8"/>
+        <text class="t-h" x="266" y="302">Alert · create_alert</text>
+        <text class="t-s" x="266" y="322">+ set_status warning / critical</text>
+        <text class="t-s" x="266" y="340">health · breakdown · leak · safety</text>
+
+        <rect class="svg-step" x="250" y="376" width="250" height="62" rx="8"/>
+        <text class="t-h" x="266" y="400">Link · link_nodes</text>
+        <text class="t-s" x="266" y="420">located_at · affects · related_to</text>
+
+        <rect class="svg-step" x="250" y="456" width="250" height="62" rx="8"/>
+        <text class="t-h" x="266" y="480">Numbers · update_attributes</text>
+        <text class="t-s" x="266" y="500">planted_ha +200, never past area_ha</text>
+      </g>
+      <path class="edge" d="M190 290 H220 V51 H246" marker-end="url(#b)"/>
+      <path class="edge" d="M220 131 H246" marker-end="url(#b)"/>
+      <path class="edge-p" d="M220 220 H246" marker-end="url(#bp)"/>
+      <path class="edge-c" d="M190 318 H246" marker-end="url(#bc)"/>
+      <path class="edge" d="M220 290 V487 H246" marker-end="url(#b)"/>
+      <path class="edge" d="M220 407 H246" marker-end="url(#b)"/>
+
+      <!-- delegation -->
+      <rect class="svg-hot" x="560" y="160" width="250" height="120" rx="8"/>
+      <text class="t-h" x="576" y="184">Delegation resolver</text>
+      <text class="t-s" x="576" y="204">"Ask Sipho to…", "Vra Sipho om…",</text>
+      <text class="t-s" x="576" y="222">"Sipho moet…" → assignee hint</text>
+      <text class="t-s" x="576" y="240">matched to members and person nodes</text>
+      <text class="t-m" x="576" y="266">fuzzy name ≥ 85</text>
+      <line class="edge-p" x1="500" y1="220" x2="556" y2="220" marker-end="url(#bp)"/>
+      <text class="t-lab" x="506" y="212">hint</text>
+
+      <rect class="svg-ok" x="870" y="120" width="250" height="80" rx="8"/>
+      <text class="t-h" x="886" y="144">Assigned to the member</text>
+      <text class="t-s" x="886" y="164">task_assigned notification</text>
+      <text class="t-s" x="886" y="182">+ assigned_to edge to their node</text>
+      <rect class="svg-warn" x="870" y="220" width="250" height="80" rx="8"/>
+      <text class="t-h" x="886" y="244">Stays with the owner</text>
+      <text class="t-s" x="886" y="264">no match: keeps "for Thabo?"</text>
+      <text class="t-s" x="886" y="282">one tap assigns it later</text>
+      <path class="edge-p" d="M810 200 H840 V160 H866" marker-end="url(#bp)"/>
+      <text class="t-lab" x="814" y="150">match</text>
+      <path class="edge-p" d="M810 240 H840 V260 H866" marker-end="url(#bp)"/>
+      <text class="t-lab" x="808" y="292">no match</text>
+
+      <!-- alerts climb -->
+      <rect class="svg-crit" x="560" y="320" width="250" height="118" rx="8"/>
+      <text class="t-h" x="576" y="344">Status roll-up</text>
+      <text class="t-s" x="576" y="364">channel → parent turns the same colour</text>
+      <text class="t-s" x="576" y="382">ancestors get the echo dot</text>
+      <text class="t-s" x="576" y="400">counts: open tasks, open alerts</text>
+      <text class="t-m" x="576" y="426">graph.rollup()</text>
+      <line class="edge-c" x1="500" y1="318" x2="556" y2="360" marker-end="url(#bc)"/>
+      <rect class="svg-crit" x="870" y="330" width="250" height="62" rx="8"/>
+      <text class="t-h" x="886" y="354">Critical: everyone hears</text>
+      <text class="t-s" x="886" y="374">owners and editors notified</text>
+      <line class="edge-c" x1="810" y1="361" x2="866" y2="361" marker-end="url(#bc)"/>
+
+      <!-- after -->
+      <rect class="svg-box" x="560" y="490" width="170" height="90" rx="8"/>
+      <text class="t-h" x="576" y="514">action_log</text>
+      <text class="t-s" x="576" y="534">inverse per change</text>
+      <text class="t-s" x="576" y="552">→ Undo the note</text>
+      <rect class="svg-box" x="750" y="490" width="170" height="90" rx="8"/>
+      <text class="t-h" x="766" y="514">Live events</text>
+      <text class="t-s" x="766" y="534">SSE / Realtime</text>
+      <text class="t-s" x="766" y="552">all four views update</text>
+      <rect class="svg-box" x="940" y="490" width="180" height="90" rx="8"/>
+      <text class="t-h" x="956" y="514">Companion</text>
+      <text class="t-s" x="956" y="534">learns from the note</text>
+      <text class="t-s" x="956" y="552">reads open work back</text>
+      <path class="edge-d" d="M105 350 V600" />
+      <path class="edge-d" d="M105 560 H556" marker-end="url(#b)"/>
+      <path class="edge-d" d="M730 535 H746" marker-end="url(#b)"/>
+      <path class="edge-d" d="M920 535 H936" marker-end="url(#b)"/>
+      <text class="t-lab" x="300" y="552">after commit</text>
+    </svg>
+    </div>
+    <figcaption>Purple is the delegation path, red the alert path. A task always has an owner: a named person if the name matches someone in the workspace, otherwise the workspace owner with the name kept as a hint.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>3 · What the owner sees in the tree</h2>
+  <p>Colour is computed from data, never set by hand. A problem filed on a channel turns its parent the same colour; every ancestor above shows a dot for the worst thing below it.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1140 300" role="img" aria-label="Tree after two notes: Main Water Pump critical with Water and Infrastructure showing a critical echo dot; Sheep Health Alerts critical, Sheep critical through the channel, Livestock and Operations showing echo dots.">
+      <g>
+        <rect class="svg-box" x="20" y="30" width="200" height="44" rx="8"/><text class="t-h" x="36" y="57">Infrastructure</text><circle cx="204" cy="40" r="6" fill="var(--crit)"/>
+        <rect class="svg-box" x="260" y="30" width="200" height="44" rx="8"/><text class="t-h" x="276" y="57">Water</text><circle cx="444" cy="40" r="6" fill="var(--crit)"/>
+        <rect class="svg-crit" x="500" y="30" width="230" height="44" rx="8"/><text class="t-h" x="516" y="57">Main Water Pump</text>
+        <circle cx="712" cy="52" r="10" class="dot-num"/><text class="t-num" x="712" y="56" text-anchor="middle">2</text>
+        <line class="edge" x1="220" y1="52" x2="256" y2="52" marker-end="url(#c)"/>
+        <line class="edge" x1="460" y1="52" x2="496" y2="52" marker-end="url(#c)"/>
+        <text class="t-s" x="760" y="46">critical · 1 alert + 1 task (badge 2)</text>
+        <text class="t-s" x="760" y="64">"Die groot pomp lek baie erg"</text>
+      </g>
+      <g>
+        <rect class="svg-box" x="20" y="130" width="200" height="44" rx="8"/><text class="t-h" x="36" y="157">Operations</text><circle cx="204" cy="140" r="6" fill="var(--crit)"/>
+        <rect class="svg-box" x="260" y="130" width="200" height="44" rx="8"/><text class="t-h" x="276" y="157">Livestock</text><circle cx="444" cy="140" r="6" fill="var(--crit)"/>
+        <rect class="svg-crit" x="500" y="130" width="230" height="44" rx="8"/><text class="t-h" x="516" y="157">Sheep</text>
+        <rect class="svg-crit" x="500" y="210" width="230" height="44" rx="8"/><text class="t-h" x="516" y="237">Health Alerts (channel)</text>
+        <path class="edge" d="M220 152 H256" marker-end="url(#c)"/>
+        <path class="edge" d="M460 152 H496" marker-end="url(#c)"/>
+        <path class="edge" d="M480 152 V232 H496" marker-end="url(#c)"/>
+        <path class="edge-c" d="M736 232 C790 232 790 152 736 152" marker-end="url(#cc)"/>
+        <text class="t-lab" x="800" y="196" style="fill: var(--crit)">mirrors to parent</text>
+        <text class="t-s" x="800" y="240">"One of the ewes broke her back left leg"</text>
+      </g>
+      <defs>
+        <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="cc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--crit)"/></marker>
+      </defs>
+    </svg>
+    </div>
+    <figcaption>Small red dots are echo dots (worst status below). Info rings fade after 24 hours and done marks after 48 hours, on the server, so every device agrees.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>4 · One real note, step by step</h2>
+  <p>Typed into the brain on WABAKIPI on 22 October with the Gemma 4 router. Two events, one branch, one person.</p>
+  <div class="tablebox">
+  <table>
+    <thead><tr><th>Step</th><th>Event 1</th><th>Event 2</th></tr></thead>
+    <tbody>
+      <tr><td>Heard</td><td colspan="2"><em>"Die groot pomp lek baie erg. Vra Sipho om dit môre reg te maak."</em></td></tr>
+      <tr><td>Split</td><td>Die groot pomp lek baie erg.</td><td>Vra Sipho om dit môre reg te maak.</td></tr>
+      <tr><td>Candidates</td><td>Main Water Pump first, 0.92 (owner's alias <code>die groot pomp</code>)</td><td>Sipho scores highest, but he is the person doing it; "dit" points back at the pump from event 1</td></tr>
+      <tr><td>Decision</td><td><span class="pill p-crit">problem · critical</span> leak (Gemma 4)</td><td><span class="pill p-hot">todo</span> for Sipho, due tomorrow 17:00 (Gemma 4 + guards)</td></tr>
+      <tr><td>Written</td><td>note, status critical, alert <code>leak</code>, urgent task for the owner</td><td>note and a high task on the pump, assigned to Sipho Dlamini, <code>assigned_to</code> edge</td></tr>
+      <tr><td>Told</td><td>Dennis and Sipho: critical alert · Dennis: task created</td><td>Sipho: task assigned</td></tr>
+      <tr><td>Tree</td><td colspan="2">Main Water Pump red with badge 3 (1 alert, 2 tasks); Water and Infrastructure show the dot; Sipho's list gains one task</td></tr>
+      <tr><td>Caught on the way</td><td>the model put the owner's own name on the task: names the owner did not say are now dropped</td><td>the model first filed "dit" on Sheep: the previous-event rule now wins for "it" / "dit"</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>The three showcase notes</h2>
+  <p>Run with <code>tools/seed_farm_showcase.py --reset-clean --auto</code> on a fresh farm, typed and then spoken (Windows speech, transcribed by Whisper). Times are from sending the note to the map being updated, Gemma 4 routing on the RTX 4060.</p>
+  <div class="tablebox">
+  <table>
+    <thead><tr><th>Note</th><th>Typed</th><th>Spoken: what Whisper heard</th><th>On the map</th></tr></thead>
+    <tbody>
+      <tr><td><em>"Wheel needs changing on tractor model John Deere 9550 - number 1"</em></td><td><span class="pill p-ok">pass</span> 3.3 s</td><td>"Wheel needs changing on track to model John Deere 9550, number 1." <span class="pill p-ok">pass</span> 4.0 s</td><td>task "Change wheel on JD 9550 #1" on John Deere 9550 #1, warning; #2 untouched</td></tr>
+      <tr><td><em>"Today I planted field south 704 to 708"</em></td><td><span class="pill p-ok">pass</span> 11.6 s</td><td>"Today I planted Field South 704 to 708." <span class="pill p-ok">pass</span> 12.4 s</td><td>five events; Field South 704–708 planted 100 % (236 ha), South Block 100 %, no stray tasks</td></tr>
+      <tr><td><em>"Ask Sipho to check the water pump on the North borehole"</em></td><td><span class="pill p-ok">pass</span> 2.3 s</td><td>"Ask Sipho to check the water pump on the north borehole." <span class="pill p-ok">pass</span> 2.8 s</td><td>task "Check North borehole pump" on North Borehole Pump, assigned to Sipho Dlamini</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Fixed on the way: "number 1" had to beat John Deere 9550 #2, which shares the 9550; a problem the owner says "needs changing" now also becomes a task; past-tense field work never becomes a to-do. The same three notes pass with rules alone, no model.</p>
+</section>
+
+<section>
+  <h2>5 · How well it routes today</h2>
+  <p id="field">Twenty golden field notes (21 events) from the blueprint's farm, routed fresh each run. Target for the end of Phase 1: 85 % right first time. These notes were also used to tune the guards, so the real test is still 20 notes recorded in the field.</p>
+  <div class="tablebox">
+  <table>
+    <thead><tr><th>Router</th><th>Right first time</th><th>Time for 21 events</th><th>Where it goes wrong</th></tr></thead>
+    <tbody id="fieldrows">
+      <tr><td>Gemma 4 E2B on the RTX 4060, rules as guard</td><td><span class="pill p-ok">19–20 / 21 · 90–95 %</span></td><td>40 s (about 2 s per event)</td><td>a broken leg once filed as a plain note; "water gekry" pulled towards the pump</td></tr>
+      <tr><td>Showcase, 3 notes: Gemma 4 / rules only</td><td><span class="pill p-ok">3 / 3 · 3 / 3</span></td><td>16 s / 0.1 s</td><td>none; checked by <code>tools/field_test.py --showcase</code></td></tr>
+      <tr><td>Rules only (no model, no internet)</td><td><span class="pill p-warn">17 / 21 · 81 %</span></td><td>0.1 s</td><td>words it has never heard ("calf") go to the Inbox; two equal matches ask the owner</td></tr>
+      <tr><td>Claude Sonnet (cloud)</td><td><span class="pill p-hot">not run</span></td><td>–</td><td>needs the Ionity API key in <code>E:\.claude\_vault\notecad.env</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>Ionity NoteCad · Ionity Global (Pty) Ltd · AEDI · Policy 986 AED · License AED 900 · (c) 2026 Ionity Global (Pty) Ltd. Author: Dennis Grobler. Code: <code>apps/desktop</code>, <code>services/brain</code>, <code>services/companion</code>, <code>services/start_notecad.ps1</code>, schema <code>packages/schema/actions.schema.json</code>, Supabase <code>supabase/migrations/0001_notecad_core.sql</code>.</footer>
+</div>

@@ -102,7 +102,8 @@ def _fact_lines(store: Store) -> list[str]:
     return lines[:40]
 
 
-def build_system_prompt(store: Store, style: dict, lang: str, memories: list[dict], now: float | None = None) -> str:
+def build_system_prompt(store: Store, style: dict, lang: str, memories: list[dict], now: float | None = None,
+                        open_work: list[str] | None = None) -> str:
     now = now or time.time()
     name = store.get_fact("owner.name")
     who = name["value"] if name else "the owner"
@@ -124,6 +125,11 @@ def build_system_prompt(store: Store, style: dict, lang: str, memories: list[dic
     if vocab:
         parts.append("Words they use often (use their words): " + ", ".join(vocab))
     how = [LANG_TEXT.get(lang, LANG_TEXT["en"])] + [STYLE_TEXT[(d, o)] for d, o in style.items() if (d, o) in STYLE_TEXT]
+    if open_work:
+        parts.append("THEIR NOTECAD MAP RIGHT NOW: open tasks and alerts, what needs work, how far along things are. "
+                     "Answer questions about what is left to do, what needs work or fixing, and progress (how much is "
+                     "planted, done, finished) from these lines only, naming the branch; if the lines do not say, "
+                     "say you do not see it on their map:\n" + "\n".join(f"- {w}" for w in open_work[:45]))
     parts.append("HOW THEY LIKE YOU TO REPLY:\n" + " ".join(how))
     return "\n\n".join(parts)
 

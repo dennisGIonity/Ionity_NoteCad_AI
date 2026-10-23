@@ -25,6 +25,48 @@ from .store import Store
 OWNER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
+def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None):
+    """Open tasks, alerts and the mind map's facts (what needs work, how far along things are) from the NoteCad
+    brain, as short lines for the prompt. The owner id is the workspace id. focus: the node the owner has open on
+    the map, so "this one" / "hier" in a question means that node."""
+    import httpx
+
+    def fetch(focus: str | None = None) -> list[str]:
+        with httpx.Client(timeout=timeout, transport=transport) as c:
+            d = c.get(f"{base_url.rstrip('/')}/v1/workspaces/{workspace_id}/digest",
+                      params={"focus": focus} if focus else None).json()
+        lines = []
+        f = d.get("focus")
+        if f:
+            bits = [f"status {f.get('display_status')}"]
+            p = f.get("progress") or {}
+            if p.get("pct") is not None:
+                bits.append(f"{p['done']:g} of {p['total']:g} {p['unit']} {p['verb']} ({p['pct']:g}%)"
+                            if p.get("done") is not None and p.get("total") is not None and p.get("unit") not in (None, "%")
+                            else f"{p['pct']:g}% {p.get('verb') or 'done'}")
+            if f.get("tasks"):
+                bits.append("open tasks: " + "; ".join(f["tasks"][:5]))
+            if f.get("alerts"):
+                bits.append("alerts: " + "; ".join(a["title"] for a in f["alerts"][:3]))
+            if f.get("children"):
+                bits.append("under it: " + ", ".join(
+                    f"{k['title']} ({k['display_status']}" + (f", {k['progress_pct']:g}%" if k.get("progress_pct") is not None else "")
+                    + ")" for k in f["children"][:12]))
+            notes = [n["body"] for n in (f.get("recent_notes") or [])[:3]]
+            if notes:
+                bits.append("latest notes: " + " | ".join(notes))
+            lines.append(f"OPEN ON SCREEN NOW ('this', 'hier' means it): {f.get('path')} - " + "; ".join(bits))
+        for a in d.get("alerts", []):
+            lines.append(f"ALERT ({a['severity']}) {a['title']} - {a.get('path', '')}")
+        for t in d.get("tasks", []):
+            who = t.get("assignee_name") or (f"for {t['assignee_hint']}?" if t.get("assignee_hint") else "you")
+            due = f", due {t['due_at'][:16].replace('T', ' ')} UTC" if t.get("due_at") else ""
+            lines.append(f"TASK ({t['priority']}) {t['title']} - {t.get('path', '')} - {who}{due}")
+        lines += (d.get("map") or {}).get("lines", [])
+        return lines
+    return fetch
+
+
 class Registry:
     """Shares one loaded model and embedder across owners; keeps owners' data apart."""
 
@@ -45,7 +87,8 @@ class Registry:
                 self._owners[owner_id] = Companion(
                     store, self.llm, self.embedder, history_turns=self.settings.history_turns,
                     memory_top_k=self.settings.memory_top_k, max_reply_tokens=self.settings.max_reply_tokens,
-                    llm_fact_extraction=self.settings.llm_fact_extraction)
+                    llm_fact_extraction=self.settings.llm_fact_extraction,
+                    open_work=brain_digest(self.settings.brain_url, owner_id) if self.settings.brain_url else None)
             return self._owners[owner_id]
 
     def drop(self, owner_id: str) -> None:
@@ -55,6 +98,7 @@ class Registry:
 
 class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    context_node_id: str | None = Field(default=None, max_length=64)  # the node open on the owner's map
 
 
 class FeedbackIn(BaseModel):
@@ -96,6 +140,11 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
     app = FastAPI(title="NoteCad Companion", version=__version__,
                   description="Private on-device assistant that learns its owner. Policy 986 AED | License AED 900.")
     app.state.registry = reg
+    origins = [o.strip() for o in (settings.cors_origins or "").split(",") if o.strip()]
+    if origins:
+        from fastapi.middleware.cors import CORSMiddleware
+        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"],
+                           allow_headers=["Authorization", "Content-Type"])
 
     def auth(authorization: str | None = Header(default=None)) -> None:
         if settings.api_token and authorization != f"Bearer {settings.api_token}":
@@ -113,7 +162,7 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
     def chat(body: ChatIn, c: Companion = Depends(owner)):
         t0 = time.perf_counter()
         with reg.model_lock:
-            out = c.chat(body.text)
+            out = c.chat(body.text, context_node_id=body.context_node_id)
         out["ms"] = round((time.perf_counter() - t0) * 1000)
         return out
 

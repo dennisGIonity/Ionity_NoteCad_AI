@@ -24,6 +24,9 @@ $logs   = Join-Path $data "logs"
 New-Item -ItemType Directory -Force $logs | Out-Null
 $pidFile = Join-Path $data "pids.txt"
 
+# the venv python.exe is a launcher with a child process, so the API is stopped by command line, not by pid
+Get-CimInstance Win32_Process -Filter "name='python.exe'" | Where-Object { $_.CommandLine -like '*notecad_companion.api*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 if ($Stop) {
   if (Test-Path $pidFile) {
     Get-Content $pidFile | ForEach-Object { Stop-Process -Id ([int]$_) -Force -ErrorAction SilentlyContinue }
@@ -87,6 +90,7 @@ if ($Engine -eq "ollama") {
 $env:NC_COMPANION_LLM_BACKEND   = "openai"
 $env:NC_COMPANION_EMBED_BACKEND = "openai"
 $env:NC_COMPANION_DATA_DIR      = $data
+$env:NC_COMPANION_BRAIN_URL     = "http://127.0.0.1:8788"   # open tasks and alerts for "what is left to do?"
 Write-Host "model side ready ($Engine)"
 if ($NoApi) { $pids | Set-Content $pidFile; return }
 

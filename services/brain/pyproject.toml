@@ -1,0 +1,26 @@
+# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900
+[project]
+name = "notecad-brain"
+version = "0.1.0"
+description = "NoteCad brain: voice note to branch, note, task, alert and delegation (Ionity Global (Pty) Ltd)"
+authors = [{ name = "Dennis Grobler (Wabakipi)", email = "dennis.g@ionity.digital" }]
+license = { text = "AED 900 - Policy 986 AED - (c) 2026 Ionity Global (Pty) Ltd" }
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "httpx>=0.27", "numpy>=1.26", "jsonschema>=4.22",
+                "rapidfuzz>=3.9", "python-multipart>=0.0.9", "tzdata; sys_platform == 'win32'", "notecad-companion"]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+whisper = ["faster-whisper>=1.2", "av>=14,<16"]  # av 16+ dropped open(metadata_errors=) that faster-whisper uses
+whisper-gpu = ["faster-whisper>=1.2", "av>=14,<16", "nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["notecad_brain"]
+
+[tool.setuptools.package-data]
+notecad_brain = ["actions.schema.json"]
+
+[tool.pytest.ini_options]
+markers = ["live: needs a running local model (Ollama) or Postgres"]
+addopts = "-m 'not live'"

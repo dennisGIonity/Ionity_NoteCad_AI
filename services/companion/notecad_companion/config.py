@@ -16,6 +16,10 @@ def _env(name: str, default: str | None = None) -> str | None:
 @dataclass
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", "./data")))
+    # browsers allowed to call the API: the NoteCad desktop (Vite dev server, Tauri shell)
+    cors_origins: str = field(default_factory=lambda: _env(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173,"
+                        "http://127.0.0.1:8788,http://localhost:8788,tauri://localhost,http://tauri.localhost"))
     # llm backend: "llama_cpp" (in-process GGUF), "openai" (Ollama / llama-server / LM Studio),
     # "claude" (cloud fallback), "none" (memory + learning only)
     llm_backend: str = field(default_factory=lambda: _env("LLM_BACKEND", "llama_cpp"))
@@ -38,4 +42,5 @@ class Settings:
     history_turns: int = field(default_factory=lambda: int(_env("HISTORY_TURNS", "6")))
     memory_top_k: int = field(default_factory=lambda: int(_env("MEMORY_TOP_K", "5")))
     llm_fact_extraction: bool = field(default_factory=lambda: _env("LLM_FACTS", "1") == "1")
+    brain_url: str | None = field(default_factory=lambda: _env("BRAIN_URL"))  # e.g. http://127.0.0.1:8788
     api_token: str | None = field(default_factory=lambda: _env("API_TOKEN"))

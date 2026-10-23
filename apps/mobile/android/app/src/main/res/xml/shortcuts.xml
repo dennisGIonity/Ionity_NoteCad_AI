@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="record"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_record"
+        android:shortcutLongLabel="@string/shortcut_record_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="today.ionity.notecad"
+            android:targetClass="today.ionity.notecad.MainActivity">
+            <extra android:name="notecad_action" android:value="record" />
+        </intent>
+    </shortcut>
+</shortcuts>
