@@ -167,6 +167,7 @@ export interface HistoryItem {
   undone: boolean
   capture_text: string | null
   source: string | null
+  audio?: boolean
   channel: string | null
   detail: Record<string, unknown>
 }

@@ -89,6 +89,11 @@ export const api = {
   ask: (ws: string, text: string, contextNodeId: string | null) =>
     call<{ reply: string; ms: number; model?: string }>(config.companion, `/v1/${ws}/chat`,
       json({ text, context_node_id: contextNodeId })),
+  audioUrl(captureId: string) {
+    const u = new URL(`${config.brain}/api/v1/captures/${captureId}/audio`)
+    if (config.token) u.searchParams.set('token', config.token)
+    return u.toString()
+  },
   eventsUrl(ws: string, lastId: number) {
     const u = new URL(`${config.brain}/api/v1/workspaces/${ws}/events/stream`)
     u.searchParams.set('last_event_id', String(lastId))

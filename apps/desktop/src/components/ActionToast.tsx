@@ -119,7 +119,7 @@ export function ActionToast() {
               <p className="text-xs text-amber-100">Where does “{i.text}” go?</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {i.options.map((o) => (
-                  <button key={o.node_id} type="button" disabled={busy === i.inbox_id} onClick={() => place(i.inbox_id, o.node_id)}
+                  <button key={o.node_id} type="button" data-inbox-option disabled={busy === i.inbox_id} onClick={() => place(i.inbox_id, o.node_id)}
                     className="rounded-full bg-amber-300/15 px-2.5 py-1 text-xs text-amber-50 transition hover:bg-amber-300/30 disabled:opacity-50">
                     {o.label.split(' > ').slice(-2).join(' › ')}
                   </button>

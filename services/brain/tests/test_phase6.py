@@ -269,3 +269,32 @@ def test_supabase_migration_matches_the_brain():
     for t in TABLES:
         assert f"create trigger nc_sync_{t} " in g.render()
     assert "security definer" in g.render()
+
+
+# ---------------------------------------------------------------- audio playback in the node's history
+def test_history_plays_the_voice_note(tmp_path):
+    from fastapi.testclient import TestClient
+    from farm import make_brain, seed_farm
+    from notecad_brain.api import create_app
+    from notecad_brain.stt import Transcript
+
+    class STT:
+        name = "fake"
+
+        def transcribe(self, audio, *, mime, lang_hint, keyterms):
+            return Transcript(text="The main water pump is leaking", language="en", confidence=0.9, engine="fake")
+    b = make_brain(f"sqlite:///{tmp_path / 'b.db'}", audio_dir=str(tmp_path / "audio"), stt=STT())
+    ids = seed_farm(b)
+    b.settings.worker = False
+    c = TestClient(create_app(b))
+    wav = b"RIFF" + bytes(2000)
+    r = c.post(f"/api/v1/workspaces/{ids['ws']}/capture", files={"audio": ("n.wav", wav, "audio/wav")},
+               data={"wait": "true"}).json()
+    hist = c.get(f"/api/v1/nodes/{ids['pump']}/history").json()
+    assert any(h["audio"] and h["capture_id"] == r["capture_id"] for h in hist)
+    a = c.get(f"/api/v1/captures/{r['capture_id']}/audio")
+    assert a.status_code == 200 and a.content == wav and a.headers["content-type"] == "audio/wav"
+    typed = c.post(f"/api/v1/workspaces/{ids['ws']}/capture", json={"text": "Sheep moved"}).json()
+    assert c.get(f"/api/v1/captures/{typed['capture_id']}/audio").status_code == 404
+    b.db.execute("update captures set audio_path=? where id=?", (str(tmp_path / "b.db"), r["capture_id"]))
+    assert c.get(f"/api/v1/captures/{r['capture_id']}/audio").status_code == 404  # outside audio_dir: never served

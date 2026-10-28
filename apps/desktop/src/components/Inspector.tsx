@@ -215,6 +215,10 @@ export function Inspector() {
                         {ago(h.at)}{h.router ? ` · ${h.router}` : ''}{h.actor === 'user:inbox' ? ' · placed by you' : ''}{h.undone ? ' · undone' : ''}
                       </p>
                       {h.capture_text && <p className="mt-0.5 truncate text-[10px] italic text-slate-500" title={h.capture_text}>“{h.capture_text}”</p>}
+                      {h.audio && h.capture_id && history.findIndex((x) => x.capture_id === h.capture_id) === history.indexOf(h) && (
+                        // biome-ignore lint/a11y/useMediaCaption: the owner's own voice note; its transcript is the line above
+                        <audio controls preload="none" src={api.audioUrl(h.capture_id)} aria-label="Play the voice note" className="mt-1 h-7 w-full max-w-60" />
+                      )}
                       {!h.undone && h.capture_id && history.findIndex((x) => x.capture_id === h.capture_id) === history.indexOf(h) && (
                         <button type="button" onClick={() => act(`u${h.capture_id}`, () => api.undo(h.capture_id!))}
                           className="mt-1 flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-100">
@@ -245,7 +249,7 @@ export function Inspector() {
             {answer && (
               <div className="mb-2 max-h-40 overflow-y-auto rounded-xl bg-white/5 p-2.5 text-xs">
                 <p className="text-slate-400">{answer.q}</p>
-                {answer.a ? <Reply text={answer.a} />
+                {answer.a ? <div data-companion-reply><Reply text={answer.a} /></div>
                   : answer.err ? <p className="mt-1 text-rose-300">{answer.err}</p>
                   : <Loader2 className="mt-1 size-4 animate-spin text-slate-400" />}
               </div>

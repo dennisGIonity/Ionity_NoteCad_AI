@@ -325,6 +325,14 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     def capture(cid: str):
         return guard(brain.capture_summary, cid)
 
+    @r.get("/v1/captures/{cid}/audio", dependencies=A)
+    def capture_audio_file(cid: str):
+        """The recording, for playback in the node's history. <audio src> cannot send a header: ?token= on a GET."""
+        from fastapi.responses import FileResponse
+        p = guard(brain.capture_audio, cid)
+        return FileResponse(p, media_type=EXT_TYPES.get(p.suffix.lower(), "application/octet-stream"),
+                            headers={"Cache-Control": "private, max-age=3600"})
+
     @r.post("/v1/captures/{cid}/undo", dependencies=A)
     def undo(cid: str):
         return guard(brain.undo, cid)

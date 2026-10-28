@@ -343,7 +343,8 @@ class Brain:
         rows: list[dict] = []
         for i in ids:
             rows += self.db.query("select a.id, a.capture_id, a.event_idx, a.seq, a.actor, a.action, a.provenance, "
-                                  "a.undone_at, a.created_at, c.text as capture_text, c.source "
+                                  "a.undone_at, a.created_at, c.text as capture_text, c.source, "
+                                  "c.audio_path is not null as has_audio "
                                   "from action_log a left join captures c on c.id=a.capture_id "
                                   "where a.workspace_id=? and a.action like ? order by a.created_at desc limit ?",
                                   (n["workspace_id"], f"%{i}%", limit))
@@ -359,6 +360,7 @@ class Brain:
             out.append({"id": r["id"], "at": r["created_at"], "type": a.get("type"), "capture_id": r["capture_id"],
                         "event_idx": r["event_idx"], "actor": r["actor"], "router": prov.get("router"),
                         "undone": r["undone_at"] is not None, "capture_text": r["capture_text"], "source": r["source"],
+                        "audio": bool(r["has_audio"]),
                         "channel": self.graph.node(a["node_id"])["title"] if a.get("node_id") not in (None, node_id)
                         and self.graph.node(a["node_id"]) else None,
                         "detail": {k: a[k] for k in ("text", "title", "status", "severity", "set", "increment",
@@ -407,6 +409,16 @@ class Brain:
                 if n and n["id"] not in out:
                     out.append(n["id"])
         return out
+
+    def capture_audio(self, cid: str) -> Path:
+        """The recording behind a capture (provenance: what the owner actually said). Only files under audio_dir."""
+        cap = self.db.one("select audio_path from captures where id=?", (cid,))
+        if cap is None or not cap["audio_path"]:
+            raise KeyError(cid)
+        p = Path(cap["audio_path"]).resolve()
+        if not p.is_file() or not p.is_relative_to(Path(self.settings.audio_dir).resolve()):
+            raise KeyError(cid)
+        return p
 
     def capture_summary(self, cid: str) -> dict:
         cap = self.db.one("select * from captures where id=?", (cid,))
