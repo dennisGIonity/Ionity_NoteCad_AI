@@ -2,8 +2,10 @@
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // App state: the map, the live event stream, captures in flight and what to highlight.
+import * as F from '@notecad/core/fold'
 import { create } from 'zustand'
 import { api, config } from './api'
+import { mapTree, type MapTree } from './maptree'
 import type { CaptureView, LiveEvent, MindMap, SyncStatus, Workspace } from './types'
 
 export type View = 'hud' | 'map'
@@ -30,13 +32,23 @@ interface AppState {
   highlights: Record<string, number>
   focusRequest: { ids: string[]; at: number } | null
   selected: string | null
-  collapsed: Record<string, boolean>
+  /** Fold state of the map (view state for this device and lens: local storage, never synced). */
+  fold: F.FoldState
+  /** The node a fold action was made on: it stays still on screen while the map re-lays out. */
+  foldAnchor: { id: string; at: number } | null
+  /** Bumped by "/" and other places that want the typed-note field open. */
+  typeRequest: number
   sync: SyncStatus | null
   syncError: string | null
   setView(v: View): void
   setLayout(l: Layout): void
   select(id: string | null): void
-  toggleCollapsed(id: string): void
+  /** Change the fold state; `anchor` stays put on screen. */
+  setFold(next: F.FoldState, anchor?: string | null): void
+  foldTree(): MapTree | null
+  /** Open the path to a node, select it and glide to it (toast "Open", Inbox, search). */
+  goTo(id: string): void
+  requestTyping(): void
   init(): Promise<void>
   switchWorkspace(ws: string): Promise<void>
   refreshMap(): Promise<void>
@@ -52,6 +64,16 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let syncTimer: ReturnType<typeof setInterval> | undefined
 let reopenTimer: ReturnType<typeof setTimeout> | undefined
 let reopenTries = 0
+let treeCache: { map: MindMap; tree: MapTree } | null = null
+
+// fold state per workspace and lens; the first visit shows the main areas
+const foldKey = (ws: string, layout: Layout) => `notecad.fold.${ws}.${layout}`
+function loadFold(ws: string, layout: Layout): F.FoldState {
+  try { return F.parse(localStorage.getItem(foldKey(ws, layout))) ?? F.mainAreas() } catch { return F.mainAreas() }
+}
+function saveFold(ws: string, layout: Layout, s: F.FoldState) {
+  try { localStorage.setItem(foldKey(ws, layout), F.serialize(s)) } catch { /* private window: the fold lasts this session */ }
+}
 
 /** The live stream. EventSource retries by itself after a drop, but gives up for good on an HTTP error (a 401 after a
  * token change, the brain restarting behind a proxy): then it is opened again here, backing off to 30 s. */
@@ -89,14 +111,31 @@ export const useApp = create<AppState>((set, get) => ({
   highlights: {},
   focusRequest: null,
   selected: null,
-  collapsed: {},
+  fold: F.mainAreas(),
+  foldAnchor: null,
+  typeRequest: 0,
   sync: null,
   syncError: null,
 
   setView: (view) => set({ view }),
-  setLayout: (layout) => set({ layout }),
+  setLayout: (layout) => set({ layout, fold: loadFold(get().ws, layout) }),
   select: (selected) => set({ selected }),
-  toggleCollapsed: (id) => set((s) => ({ collapsed: { ...s.collapsed, [id]: !s.collapsed[id] } })),
+  setFold(next, anchor = null) {
+    set({ fold: next, foldAnchor: anchor ? { id: anchor, at: Date.now() } : null })
+    saveFold(get().ws, get().layout, next)
+  },
+  foldTree() {
+    const map = get().map
+    if (!map) return null
+    if (treeCache?.map !== map) treeCache = { map, tree: mapTree(map) }
+    return treeCache.tree
+  },
+  goTo(id) {
+    const t = get().foldTree()
+    if (t) get().setFold(F.reveal(t.idx, get().fold, id))
+    set({ view: 'map', selected: id, focusRequest: { ids: [id], at: Date.now() } })
+  },
+  requestTyping: () => set((s) => ({ typeRequest: s.typeRequest + 1 })),
 
   async init() {
     try {
@@ -116,7 +155,7 @@ export const useApp = create<AppState>((set, get) => ({
     clearTimeout(reopenTimer)
     source?.close()
     source = null
-    set({ ws, map: null, captures: {}, activeCapture: null, selected: null, highlights: {} })
+    set({ ws, map: null, captures: {}, activeCapture: null, selected: null, highlights: {}, fold: loadFold(ws, get().layout), foldAnchor: null })
     await get().refreshMap()
     if (get().ws !== ws) return  // another switch happened while the map loaded
     const cursor = get().map?.cursor ?? 0
@@ -132,7 +171,12 @@ export const useApp = create<AppState>((set, get) => ({
     if (!ws) return
     try {
       const map = await api.mindmap(ws)
-      if (get().ws === ws) set({ map, mapError: null })
+      if (get().ws !== ws) return
+      const t = mapTree(map)
+      treeCache = { map, tree: t }
+      // ids that were deleted or synced away drop out of the saved fold state
+      const fold = F.prune(t.idx, get().fold)
+      set({ map, mapError: null, ...(fold.expanded.length !== get().fold.expanded.length || fold.collapsed.length !== get().fold.collapsed.length ? { fold } : {}) })
     } catch (e) {
       set({ mapError: (e as Error).message })
     }

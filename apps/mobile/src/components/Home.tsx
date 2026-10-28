@@ -2,13 +2,14 @@
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import {
-  AlertTriangle, Check, ChevronDown, CircleDot, CloudOff, Keyboard, ListTodo, Loader2, LogOut, MessageCircle, Mic,
+  AlertTriangle, Check, ChevronDown, ChevronRight, CircleDot, CloudOff, Keyboard, ListTodo, Loader2, LogOut, MessageCircle, Mic,
   RefreshCw, Send, Square, Trash2, Undo2, Wifi, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Native, platform } from '../lib/native'
 import type { NativeItem } from '../lib/native'
 import type { OutboxItem } from '../lib/outbox'
+import * as F from '@notecad/core/fold'
 import { usePhone } from '../lib/phone'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -75,8 +76,18 @@ function ContextPicker() {
   const { map, context, setContext } = usePhone(useShallow((s) => ({ map: s.map, context: s.context, setContext: s.setContext })))
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const nodes = useMemo(() => (map?.nodes ?? []).filter((n) => (n.type === 'category' || n.type === 'entity') && !n.virtual
-    && (!q || `${n.path} ${n.title}`.toLowerCase().includes(q.toLowerCase()))).slice(0, 60), [map, q])
+  // the farm as a tree that opens a branch at a time (the same fold logic as the desktop map); a search is a flat list
+  const tree = useMemo(() => {
+    const ns = (map?.nodes ?? []).filter((n) => (n.type === 'root' || n.type === 'category' || n.type === 'entity') && !n.virtual)
+    return { by: new Map(ns.map((n) => [n.id, n])), idx: F.indexTree(ns.map((n) => ({ id: n.id, parent_id: n.type === 'root' ? null : n.parent_id }))) }
+  }, [map])
+  const [fold, setFold] = useState<F.FoldState>(F.mainAreas())
+  const found = useMemo(() => (!q ? [] : (map?.nodes ?? []).filter((n) => (n.type === 'category' || n.type === 'entity') && !n.virtual
+    && `${n.path} ${n.title}`.toLowerCase().includes(q.toLowerCase())).slice(0, 60)), [map, q])
+  const rows = useMemo(() => (q ? found.map((n) => ({ n, depth: 0 })) : F.visible(tree.idx, fold)
+    .filter((id) => tree.by.get(id)?.type !== 'root').map((id) => ({ n: tree.by.get(id)!, depth: (tree.idx.depth.get(id) ?? 1) - 1 }))),
+  [q, found, tree, fold])
+  const pick = (n: { id: string; title: string }) => { setContext({ id: n.id, title: n.title }); setOpen(false) }
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="mx-auto flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">
@@ -92,24 +103,34 @@ function ContextPicker() {
               className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[15px] text-slate-100 placeholder:text-slate-500 focus:outline-none" />
             <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10"><X className="size-5" /></button>
           </div>
-          <ul className="safe flex-1 space-y-1 overflow-y-auto pb-8">
+          <ul className="safe flex-1 space-y-1 overflow-y-auto pb-8" role={q ? undefined : 'tree'} aria-label="Branches">
             <li>
               <button type="button" onClick={() => { setContext(null); setOpen(false) }} className="w-full rounded-xl px-3 py-3 text-left text-slate-200 hover:bg-white/5">
                 Whole farm <span className="text-xs text-slate-500">· the brain decides where</span>
               </button>
             </li>
-            {nodes.map((n) => (
-              <li key={n.id}>
-                <button type="button" onClick={() => { setContext({ id: n.id, title: n.title }); setOpen(false) }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-white/5">
-                  <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_DOT[n.display_status ?? ''] ?? '#34d399' }} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[15px] text-slate-100">{n.title}</span>
-                    <span className="block truncate text-xs text-slate-500">{n.path}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
+            {rows.map(({ n, depth }) => {
+              const kids = (tree.idx.children.get(n.id)?.length ?? 0) > 0 && !q
+              const isOpen = kids && F.isOpen(tree.idx, fold, n.id)
+              return (
+                <li key={n.id} className="flex items-center gap-1" style={{ paddingLeft: depth * 16 }}
+                  {...(q ? {} : { role: 'treeitem', 'aria-level': depth + 1, 'aria-expanded': kids ? isOpen : undefined })}>
+                  {kids
+                    ? <button type="button" onClick={() => setFold(F.toggle(tree.idx, fold, n.id))} aria-label={isOpen ? `Fold ${n.title}` : `Open ${n.title}`}
+                        className="grid size-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-white/5">
+                        {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </button>
+                    : <span className="size-9 shrink-0" />}
+                  <button type="button" onClick={() => pick(n)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-white/5">
+                    <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_DOT[n.display_status ?? ''] ?? '#34d399' }} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[15px] text-slate-100">{n.title}</span>
+                      {q && <span className="block truncate text-xs text-slate-500">{n.path}</span>}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

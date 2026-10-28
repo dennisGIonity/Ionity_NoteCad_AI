@@ -22,6 +22,15 @@ async function openMap(page: Page) {
   await page.locator('.react-flow__node').first().waitFor()
 }
 
+/** The map opens on its main areas: reach a node the way the owner does, through "Go to" (opens its path, selects it). */
+async function goTo(page: Page, title: string) {
+  await page.getByLabel('Go to a node').fill(title)
+  await page.getByLabel('Go to a node').press('Enter')
+  await expect(page.locator(`.react-flow__node[aria-label="${title}"]`)).toHaveAttribute('aria-selected', 'true')
+  await page.locator('body').click({ position: { x: 2, y: 400 } }).catch(() => undefined)
+  await page.locator(`.react-flow__node[aria-label="${title}"]`).click()
+}
+
 async function latestCaptures(page: Page, n = 5) {
   const r = await page.request.get(`${BRAIN}/api/v1/workspaces/showcase/export`)
   const caps = ((await r.json()).tables?.captures ?? []) as { id: string; created_at: string; anchor_node_id: string | null; source: string; state: string }[]
@@ -42,7 +51,7 @@ test('typed note lands, then Undo takes it back', async ({ page }) => {
   await page.getByRole('button', { name: 'Type instead' }).click()
   await page.getByLabel('Type a note').fill('Ask Thabo to grease John Deere 9550 number 2 before Friday')
   await page.getByLabel('Type a note').press('Enter')
-  await expect(page.getByText(/Updated .*John Deere 9550 #2/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Updated .*John Deere 9550 #2/).first()).toBeVisible({ timeout: 30_000 })
   await page.getByRole('button', { name: /^Undo$/ }).click()
   await expect(page.getByText('Undone: nothing from this note is on the map')).toBeVisible()
 })
@@ -51,7 +60,7 @@ test('a note the brain is unsure of is placed from the Inbox in one tap', async 
   await openMap(page)
   const before = (await latestCaptures(page, 1))[0]?.id
   await page.getByRole('button', { name: 'Type instead' }).click()
-  await page.getByLabel('Type a note').fill('Blue widgets need sorting')
+  await page.getByLabel('Type a note').fill('Sort out the stuff')
   await page.getByLabel('Type a note').press('Enter')
   const pill = page.locator('[data-inbox-option]').first()
   await expect(pill).toBeVisible({ timeout: 30_000 })
@@ -66,7 +75,7 @@ test('node drawer: tasks, history, the companion', async ({ page }) => {
   const r = await (await page.request.post(`${BRAIN}/api/v1/workspaces/showcase/capture`, {
     data: { text: 'North borehole pump pressure is low again', wait: true } })).json()
   await openMap(page)
-  await page.locator('.react-flow__node').filter({ hasText: 'North Borehole Pump' }).first().click()
+  await goTo(page, 'North Borehole Pump')
   const drawer = page.getByRole('complementary')
   await expect(drawer.getByText('North Borehole Pump').first()).toBeVisible()
   await drawer.getByRole('tab', { name: /History/ }).click()
@@ -80,7 +89,7 @@ test('node drawer: tasks, history, the companion', async ({ page }) => {
 test('hold Space to talk: the selected node is the context, and the drawer plays the recording', async ({ page }) => {
   await openMap(page)
   const pump = await nodeId(page, 'North Borehole Pump')
-  await page.locator('.react-flow__node').filter({ hasText: 'North Borehole Pump' }).first().click()
+  await goTo(page, 'North Borehole Pump')
   await page.keyboard.down('Space')
   await page.waitForTimeout(4500)
   await page.keyboard.up('Space')
@@ -100,7 +109,7 @@ test('hold Space to talk: the selected node is the context, and the drawer plays
 test('"Record note for this node" anchors the recording', async ({ page }) => {
   await openMap(page)
   const jd = await nodeId(page, 'John Deere 9550 #1')
-  await page.locator('.react-flow__node').filter({ hasText: 'John Deere 9550 #1' }).first().click()
+  await goTo(page, 'John Deere 9550 #1')
   const drawer = page.getByRole('complementary')
   await drawer.getByRole('button', { name: /Record note for this node/ }).click()
   await page.waitForTimeout(4000)
@@ -111,7 +120,7 @@ test('"Record note for this node" anchors the recording', async ({ page }) => {
 
 test('pairing dialog opens and Escape closes only the dialog', async ({ page }) => {
   await openMap(page)
-  await page.locator('.react-flow__node').filter({ hasText: 'North Borehole Pump' }).first().click()
+  await goTo(page, 'North Borehole Pump')
   await page.getByTitle('Local store and sync status').click()
   await page.getByRole('button', { name: /Pair a phone/ }).click()
   await expect(page.getByRole('dialog', { name: 'Pair a phone' })).toBeVisible()

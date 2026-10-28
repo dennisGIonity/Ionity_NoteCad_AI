@@ -1,153 +1,158 @@
 // Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
-// Mind map payload -> React Flow nodes and edges, laid out as a left-to-right tree (Dagre) or radially.
+// Mind map payload -> the fold tree, positions for the visible nodes, and React Flow nodes and edges.
 // Tasks on things (assets, fields) are drawn inside their card; tasks on categories are their own leaves.
+// Layout engines (ADR 0013): d3-hierarchy's tidy tree (3 ms for 2,000 nodes), dagre as a fallback
+// (localStorage notecad.layoutEngine = "dagre"), and the radial view. Positions depend only on the tree's shape,
+// so selection, highlights and live counts never run the layout again.
 import dagre from '@dagrejs/dagre'
-import type { Edge, Node } from '@xyflow/react'
+import type { Hidden } from '@notecad/core/fold'
+import { type Edge, type Node, type NodeHandle, Position } from '@xyflow/react'
+import { hierarchy, tree as tidyTree } from 'd3-hierarchy'
+import { cardKind, inline, type CardKind, type MapTree } from './maptree'
 import type { MapNode, MindMap } from './types'
 import { statusColor } from './ui'
 
-export type CardKind = 'root' | 'category' | 'asset' | 'field' | 'task' | 'member'
+export type Engine = 'tidy' | 'dagre'
+export type Pos = { x: number; y: number }
 export interface CardData extends Record<string, unknown> {
   node: MapNode
   card: CardKind
   tasks: MapNode[]
   highlight: boolean
-  collapsed: boolean
-  hidden: number
-  kids: number
+  foldable: boolean
+  open: boolean
+  hidden: Hidden | null
+  level: number
   radial: boolean
 }
 
-const SIZE: Record<CardKind, [number, number]> = {
-  root: [250, 96], category: [250, 104], asset: [260, 104], field: [260, 116], task: [230, 52], member: [210, 60],
-}
+const GAP_Y = 16
+const GAP_X = 90
 
-export function cardKind(n: MapNode): CardKind {
-  if (n.type === 'root') return 'root'
-  if (n.type === 'category') return 'category'
-  if (n.type === 'task') return 'task'
-  if (n.type === 'member') return 'member'
-  if (n.kind === 'field' || n.progress?.unit === 'ha') return 'field'
-  return 'asset'
-}
-
-export function sizeOf(card: CardKind, tasks = 0): [number, number] {
-  const [w, h] = SIZE[card]
-  return card === 'asset' ? [w, h + Math.min(tasks, 2) * 22] : [w, h]
-}
-
-export function ancestors(map: MindMap, id: string): string[] {
-  const by = new Map(map.nodes.map((n) => [n.id, n]))
-  const out: string[] = []
-  let n = by.get(id)
-  while (n?.parent_id) {
-    out.push(n.parent_id)
-    n = by.get(n.parent_id)
-  }
-  return out
-}
-
-export function buildGraph(map: MindMap, opts: { collapsed: Record<string, boolean>; radial: boolean; highlights: Record<string, number>; selected: string | null }) {
-  const by = new Map(map.nodes.map((n) => [n.id, n]))
-  const kids = new Map<string, MapNode[]>()
-  for (const n of map.nodes) if (n.parent_id) kids.set(n.parent_id, [...(kids.get(n.parent_id) ?? []), n])
-  const inline = (n: MapNode) => cardKind(n) === 'asset' || cardKind(n) === 'field'
-  const order = (a: MapNode, b: MapNode) => (a.type === 'task' ? 1 : 0) - (b.type === 'task' ? 1 : 0) || a.title.localeCompare(b.title)
-
-  // visible tree, honouring collapsed branches
-  const visible: MapNode[] = []
-  const shownKids = new Map<string, MapNode[]>()
-  const countAll = (id: string): number => (kids.get(id) ?? []).reduce((s, k) => s + 1 + countAll(k.id), 0)
-  const walk = (n: MapNode) => {
-    visible.push(n)
-    const ks = (kids.get(n.id) ?? []).filter((k) => !(k.type === 'task' && inline(n))).sort(order)
-    if (opts.collapsed[n.id]) return
-    shownKids.set(n.id, ks)
-    ks.forEach(walk)
-  }
-  const root = by.get(map.root)
-  if (!root) return { nodes: [] as Node<CardData>[], edges: [] as Edge[] }
-  walk(root)
-  const vis = new Set(visible.map((n) => n.id))
-
-  // positions
-  const pos = new Map<string, { x: number; y: number }>()
-  const sizes = new Map(visible.map((n) => {
-    const card = cardKind(n)
-    return [n.id, sizeOf(card, (kids.get(n.id) ?? []).filter((k) => k.type === 'task').length)] as const
-  }))
-  if (!opts.radial) {
-    const g = new dagre.graphlib.Graph()
-    g.setGraph({ rankdir: 'LR', nodesep: 16, ranksep: 90, marginx: 40, marginy: 40 })
-    g.setDefaultEdgeLabel(() => ({}))
-    for (const n of visible) {
-      const [w, h] = sizes.get(n.id)!
-      g.setNode(n.id, { width: w, height: h })
-    }
-    for (const n of visible) if (n.parent_id && vis.has(n.parent_id)) g.setEdge(n.parent_id, n.id)
-    dagre.layout(g)
-    for (const n of visible) {
-      const p = g.node(n.id)
-      const [w, h] = sizes.get(n.id)!
-      pos.set(n.id, { x: p.x - w / 2, y: p.y - h / 2 })
-    }
-  } else {
+/** Top-left positions of the visible nodes. */
+export function layoutPositions(t: MapTree, visibleIds: string[], opts: { radial: boolean; engine: Engine }): Map<string, Pos> {
+  const vis = new Set(visibleIds)
+  const pos = new Map<string, Pos>()
+  const kidsOf = (id: string) => (t.idx.children.get(id) ?? []).filter((k) => vis.has(k))
+  const rootId = t.idx.roots.find((r) => vis.has(r))
+  if (!rootId) return pos
+  const size = (id: string) => t.sizes.get(id) ?? [240, 100]
+  if (opts.radial) {
     const weight = new Map<string, number>()
-    const wt = (n: MapNode): number => {
-      const ks = shownKids.get(n.id) ?? []
+    const wt = (id: string): number => {
+      const ks = kidsOf(id)
       const v = ks.length ? ks.reduce((s, k) => s + wt(k), 0) : 1
-      weight.set(n.id, v)
+      weight.set(id, v)
       return v
     }
-    wt(root)
+    wt(rootId)
     const ring = (d: number) => (d === 0 ? 0 : 330 + (d - 1) * 300)
-    const place = (n: MapNode, d: number, a0: number, a1: number) => {
+    const place = (id: string, d: number, a0: number, a1: number) => {
       const a = (a0 + a1) / 2
-      const [w, h] = sizes.get(n.id)!
-      const r = ring(d)
-      pos.set(n.id, { x: r * Math.cos(a) - w / 2, y: r * Math.sin(a) - h / 2 })
+      const [w, h] = size(id)
+      pos.set(id, { x: ring(d) * Math.cos(a) - w / 2, y: ring(d) * Math.sin(a) - h / 2 })
       let cur = a0
-      const total = weight.get(n.id) ?? 1
-      for (const k of shownKids.get(n.id) ?? []) {
-        const span = ((a1 - a0) * (weight.get(k.id) ?? 1)) / total
+      const total = weight.get(id) ?? 1
+      for (const k of kidsOf(id)) {
+        const span = ((a1 - a0) * (weight.get(k) ?? 1)) / total
         place(k, d + 1, cur, cur + span)
         cur += span
       }
     }
-    place(root, 0, -Math.PI, Math.PI)
+    place(rootId, 0, -Math.PI, Math.PI)
+    return pos
   }
+  if (opts.engine === 'dagre') {
+    const g = new dagre.graphlib.Graph()
+    g.setGraph({ rankdir: 'LR', nodesep: GAP_Y, ranksep: GAP_X, marginx: 40, marginy: 40 })
+    g.setDefaultEdgeLabel(() => ({}))
+    for (const id of visibleIds) { const [w, h] = size(id); g.setNode(id, { width: w, height: h }) }
+    for (const id of visibleIds) { const p = t.idx.parent.get(id); if (p && vis.has(p)) g.setEdge(p, id) }
+    dagre.layout(g)
+    for (const id of visibleIds) { const p = g.node(id); const [w, h] = size(id); pos.set(id, { x: p.x - w / 2, y: p.y - h / 2 }) }
+    return pos
+  }
+  // tidy tree, left to right: d3's x is our vertical axis. Separation in pixels from each pair's card heights.
+  type D = { id: string; children: D[] }
+  const build = (id: string): D => ({ id, children: kidsOf(id).map(build) })
+  const root = hierarchy<D>(build(rootId))
+  const colX = new Map<number, number>()  // column left edge per depth: the widest card of the column decides
+  let x = 0
+  for (let d = 0; d <= t.idx.maxDepth; d++) {
+    colX.set(d, x)
+    let widest = 0
+    for (const id of visibleIds) if (t.idx.depth.get(id) === d) widest = Math.max(widest, size(id)[0])
+    x += (widest || 240) + GAP_X
+  }
+  tidyTree<D>().nodeSize([1, 1]).separation((a, b) => (size(a.data.id)[1] + size(b.data.id)[1]) / 2 + (a.parent === b.parent ? GAP_Y : GAP_Y * 2))(root)
+  root.each((n) => {
+    const [, h] = size(n.data.id)
+    pos.set(n.data.id, { x: colX.get(n.depth) ?? n.depth * 340, y: (n.x ?? 0) - h / 2 })
+  })
+  return pos
+}
 
-  const now = Date.now()
-  const nodes: Node<CardData>[] = visible.map((n) => {
+// where Cards.tsx puts its handles: left / right middle for the tree, the centre for the radial view
+function handlesFor(w: number, h: number): NodeHandle[] {
+  return [
+    { id: 't', type: 'target', position: Position.Left, x: 0, y: h / 2 },
+    { id: 's', type: 'source', position: Position.Right, x: w, y: h / 2 },
+    { id: 'ct', type: 'target', position: Position.Top, x: w / 2, y: h / 2 },
+    { id: 'cs', type: 'source', position: Position.Top, x: w / 2, y: h / 2 },
+  ]
+}
+
+export function buildNodes(t: MapTree, visibleIds: string[], pos: Map<string, Pos>, opts: {
+  radial: boolean; open: (id: string) => boolean; hidden: Map<string, Hidden>; hot: Set<string>; selected: string | null;
+  focused: string | null; className?: (id: string) => string | undefined; position?: (id: string) => Pos | undefined
+}): Node<CardData>[] {
+  return visibleIds.map((id) => {
+    const n = t.by.get(id)!
     const card = cardKind(n)
+    const foldable = (t.idx.children.get(id)?.length ?? 0) > 0
+    const open = foldable && opts.open(id)
+    const level = (t.idx.depth.get(id) ?? 0) + 1
+    const [w, h] = t.sizes.get(id) ?? [240, 100]
     return {
-      id: n.id,
-      type: card,
-      position: pos.get(n.id)!,
-      selected: opts.selected === n.id,
+      id, type: card, position: opts.position?.(id) ?? pos.get(id) ?? { x: 0, y: 0 },
+      // the card's size and its handles are known before it is drawn, so React Flow never has to render a card just
+      // to measure it: off-screen cards stay out of the DOM even when 2,000 appear at once (Expand all), and a card
+      // is never hidden (taking the keyboard focus with it) while it is measured
+      initialWidth: w, initialHeight: h, measured: { width: w, height: h }, handles: handlesFor(w, h),
+      selected: opts.selected === id,
+      className: opts.className?.(id),
+      ariaRole: 'treeitem',
+      ariaLabel: n.title,
+      domAttributes: {
+        tabIndex: opts.focused === id ? 0 : -1,
+        'aria-level': level,
+        'aria-expanded': foldable ? open : undefined,
+        'aria-selected': opts.selected === id,
+      },
       data: {
-        node: n, card, radial: opts.radial,
-        tasks: (kids.get(n.id) ?? []).filter((k) => k.type === 'task'),
-        highlight: (opts.highlights[n.id] ?? 0) > now,
-        collapsed: !!opts.collapsed[n.id],
-        hidden: opts.collapsed[n.id] ? countAll(n.id) : 0,
-        kids: (kids.get(n.id) ?? []).filter((k) => !(k.type === 'task' && inline(n))).length,
+        node: n, card, radial: opts.radial, tasks: (t.tasksOf.get(id) ?? []).filter(() => inline(n)),
+        highlight: opts.hot.has(id), foldable, open, hidden: opts.hidden.get(id) ?? null, level,
       },
     }
   })
+}
 
+export function buildEdges(t: MapTree, map: MindMap, visibleIds: string[], opts: { radial: boolean; hot: Set<string>; entering?: Set<string> }): Edge[] {
+  const vis = new Set(visibleIds)
   const handles = opts.radial ? { sourceHandle: 'cs', targetHandle: 'ct' } : { sourceHandle: 's', targetHandle: 't' }
   const edges: Edge[] = []
-  for (const n of visible) {
-    if (!n.parent_id || !vis.has(n.parent_id)) continue
+  for (const id of visibleIds) {
+    const p = t.idx.parent.get(id)
+    if (!p || !vis.has(p)) continue
+    const n = t.by.get(id)!
     const st = n.type === 'task' ? (n.due_state === 'overdue' ? 'critical' : 'info') : n.display_status
-    const hot = (opts.highlights[n.id] ?? 0) > now
+    const hot = opts.hot.has(id)
     const quiet = !st || st === 'ok' || st === 'done'
     edges.push({
-      id: `t:${n.id}`, source: n.parent_id, target: n.id, ...handles, type: opts.radial ? 'straight' : 'default',
-      animated: hot,
+      id: `t:${id}`, source: p, target: id, ...handles, type: opts.radial ? 'straight' : 'default', animated: hot,
+      className: opts.entering?.has(id) ? 'nc-edge-enter' : undefined,
       style: { stroke: hot ? '#38bdf8' : quiet ? 'rgba(148,163,184,0.35)' : statusColor(st), strokeWidth: hot ? 2.4 : quiet ? 1.4 : 1.8 },
     })
   }
@@ -162,5 +167,9 @@ export function buildGraph(map: MindMap, opts: { collapsed: Record<string, boole
       style: { stroke: e.type === 'assigned_to' ? 'rgba(167,139,250,0.55)' : 'rgba(148,163,184,0.35)', strokeDasharray: '4 4', strokeWidth: 1.2 },
     })
   }
-  return { nodes, edges }
+  return edges
+}
+
+export function layoutEngine(): Engine {
+  try { return localStorage.getItem('notecad.layoutEngine') === 'dagre' ? 'dagre' : 'tidy' } catch { return 'tidy' }
 }

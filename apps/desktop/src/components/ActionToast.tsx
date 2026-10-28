@@ -24,7 +24,8 @@ function actionIcons(a: CaptureView['applied'][0]) {
 }
 
 export function ActionToast() {
-  const { captures, activeCapture, setView, select } = useApp()
+  const captures = useApp((s) => s.captures)
+  const activeCapture = useApp((s) => s.activeCapture)
   const cap = activeCapture ? captures[activeCapture] : undefined
   const [hidden, setHidden] = useState<string | null>(null)
   const [hover, setHover] = useState(false)
@@ -82,7 +83,7 @@ export function ActionToast() {
     })
     setBusy(null)
   }
-  const open = (id: string) => { setView('map'); select(id) }
+  const open = (id: string) => useApp.getState().goTo(id)  // opens only the path to it, then selects it
 
   return (
     <div

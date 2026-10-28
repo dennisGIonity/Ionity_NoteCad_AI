@@ -3,12 +3,13 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Mind map cards: root, category (progress ring, alert badge, collapse), asset (status ring, echo dot, tasks,
 // reminder badge), field (progress fill, last update, decay), task leaf, member.
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import { AlertTriangle, Bell, ChevronLeft, ChevronRight, CircleDot, ListTodo, Users } from 'lucide-react'
-import { memo, type ReactNode } from 'react'
+import * as F from '@notecad/core/fold'
+import { Handle, Position, useStore, type NodeProps, type Node, type ReactFlowState } from '@xyflow/react'
+import { AlertTriangle, Bell, ChevronDown, ChevronRight, CircleDot, ListTodo, Users } from 'lucide-react'
+import { memo, type MouseEvent, type ReactNode } from 'react'
 import type { CardData } from '../../lib/layout'
 import { useApp } from '../../lib/store'
-import type { MapNode } from '../../lib/types'
+import type { MapNode, Status } from '../../lib/types'
 import { ago, cls, due, iconFor, progressLabel, STATUS_LABEL, statusColor } from '../../lib/ui'
 
 type P = NodeProps<Node<CardData>>
@@ -70,21 +71,61 @@ export function Ring({ pct, size = 44, stroke = 4, color = '#34d399', children }
   )
 }
 
-function Collapse({ data }: { data: CardData }) {
-  const toggle = useApp((s) => s.toggleCollapsed)
-  if (!data.kids) return null
+/** Zoom decides how much a visible card shows; the fold decides which cards exist. Below this zoom cards show
+ *  their title, status and fold badge only. One boolean per card, so zooming re-renders a card only at the line. */
+const FAR = 0.55
+const isFar = (s: ReactFlowState) => s.transform[2] < FAR
+export const useFar = () => useStore(isFar)
+export const TINY = 0.4
+export const isTiny = (s: ReactFlowState) => s.transform[2] < TINY
+/** Far out (a whole farm on screen) a card is a status-coloured tile with its title: hundreds of them pan smoothly. */
+function Tiny({ data, selected }: { data: CardData; selected?: boolean }) {
+  const st = data.node.display_status ?? 'ok'
+  const [w, h] = SIZES[data.card]
+  return (
+    <div className={cls('nc-tiny rounded-2xl border-4 bg-slate-900 px-3 py-2 text-lg font-semibold text-slate-100', data.highlight && 'nc-pulse')}
+      style={{ width: w, height: h, borderColor: selected ? '#38bdf8' : statusColor(st === 'ok' ? null : st) }}>
+      <div className="truncate">{data.node.title}</div>
+      {data.hidden && !data.open && <div className="truncate text-base text-slate-400">{F.badgeText(data.hidden)}</div>}
+    </div>
+  )
+}
+const SIZES: Record<CardData['card'], [number, number]> = { root: [250, 96], category: [250, 104], asset: [260, 104], field: [260, 116], task: [230, 52], member: [210, 60] }
+
+/** Chevron on every node with children; folded, it carries what it hides: "+14 · 2 alerts · 3 tasks" in the colour
+ *  of the worst status underneath. Click: next level only. Shift+click: the whole branch. */
+function Fold({ data }: { data: CardData }) {
+  if (!data.foldable) return null
+  const id = data.node.id
+  const h = data.hidden
+  const act = (e: MouseEvent) => {
+    e.stopPropagation()
+    const app = useApp.getState()
+    const t = app.foldTree()
+    if (!t) return
+    const s = app.fold
+    const next = e.shiftKey ? (data.open ? F.collapseSubtree(t.idx, s, id) : F.expandSubtree(t.idx, s, id)) : F.toggle(t.idx, s, id)
+    app.setFold(next, id)
+  }
+  const tone = h && STATUS_RANK_HOT.has(h.worst) ? statusColor(h.worst as Status) : undefined
   return (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); toggle(data.node.id) }}
-      title={data.collapsed ? `Show ${data.hidden} hidden` : 'Collapse'}
-      className={cls('nodrag absolute -right-3 top-1/2 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-full border border-white/15 bg-slate-800 px-1 text-[10px] text-slate-300 shadow hover:bg-slate-700',
-        data.radial && 'hidden')}
+      tabIndex={-1}
+      data-fold-toggle={id}
+      onClick={act}
+      aria-label={data.open ? `Fold ${data.node.title}` : `Show what is under ${data.node.title}${h ? `: ${F.badgeText(h)}` : ''}`}
+      title={data.open ? 'Fold (Shift: the whole branch)' : 'Show the next level (Shift: the whole branch)'}
+      className={cls('nodrag absolute -right-3 top-1/2 flex h-6 -translate-y-1/2 items-center gap-1 rounded-full border bg-slate-800 px-1 text-[10px] font-semibold text-slate-200 shadow hover:bg-slate-700',
+        tone ? 'border-transparent' : 'border-white/15')}
+      style={tone ? { boxShadow: `0 0 0 1.5px ${tone}` } : undefined}
     >
-      {data.collapsed ? <><span className="pl-0.5">{data.hidden}</span><ChevronRight className="size-3.5" /></> : <ChevronLeft className="size-3.5" />}
+      {!data.open && h && <span data-fold-badge className="whitespace-nowrap pl-1">{F.badgeText(h)}</span>}
+      {data.open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
     </button>
   )
 }
+const STATUS_RANK_HOT = new Set(['critical', 'warning', 'routine_due'])
 
 function Badge({ icon, n, tone, title }: { icon: ReactNode; n: number; tone: 'alert' | 'task' | 'due'; title: string }) {
   if (!n) return null
@@ -109,6 +150,7 @@ export const RootCard = memo(({ data, selected }: P) => {
         </div>
       </div>
       <EchoDot n={n} />
+      <Fold data={data} />
     </Shell>
   )
 })
@@ -123,7 +165,7 @@ export const CategoryCard = memo(({ data, selected }: P) => {
       <div className="flex items-center gap-3">
         <Ring pct={n.progress_pct} color="#34d399">
           <div className="grid size-8 place-items-center rounded-full" style={{ background: `${statusColor(st)}22` }}>
-            <Icon className="size-4" style={{ color: st === 'ok' || st === 'info' ? '#cbd5e1' : statusColor(st) }} />
+            <Icon className="size-4 text-slate-300" style={st === 'ok' || st === 'info' ? undefined : { color: statusColor(st) }} />
           </div>
         </Ring>
         <div className="min-w-0 flex-1">
@@ -137,12 +179,13 @@ export const CategoryCard = memo(({ data, selected }: P) => {
         </div>
       </div>
       <EchoDot n={n} />
-      <Collapse data={data} />
+      <Fold data={data} />
     </Shell>
   )
 })
 
 export const AssetCard = memo(({ data, selected }: P) => {
+  const far = useFar()
   const n = data.node
   const Icon = iconFor(n)
   const st = n.display_status ?? 'ok'
@@ -168,7 +211,7 @@ export const AssetCard = memo(({ data, selected }: P) => {
           </span>
         )}
       </div>
-      {data.tasks.length > 0 && (
+      {data.tasks.length > 0 && !far && (
         <ul className="mt-2 space-y-1">
           {data.tasks.slice(0, 2).map((t) => (
             <li key={t.id} className="flex items-center gap-1.5 truncate text-[11px] text-slate-300">
@@ -181,7 +224,7 @@ export const AssetCard = memo(({ data, selected }: P) => {
         </ul>
       )}
       <EchoDot n={n} />
-      <Collapse data={data} />
+      <Fold data={data} />
     </Shell>
   )
 })
@@ -220,6 +263,7 @@ export const FieldCard = memo(({ data, selected }: P) => {
         {data.tasks.length > 0 && <span className="flex items-center gap-1 text-sky-300"><ListTodo className="size-3" />{data.tasks.length}</span>}
       </div>
       <EchoDot n={n} />
+      <Fold data={data} />
     </Shell>
   )
 })
@@ -256,4 +300,12 @@ export const MemberCard = memo(({ data, selected }: P) => {
   )
 })
 
-export const nodeTypes = { root: RootCard, category: CategoryCard, asset: AssetCard, field: FieldCard, task: TaskCard, member: MemberCard }
+/** The tile far out, the full card from TINY zoom in; one boolean per card, so zooming re-renders at the line only. */
+function withTiny(Full: (p: P) => ReactNode) {
+  return memo((p: P) => (useStore(isTiny) ? <Tiny data={p.data} selected={p.selected} /> : <Full {...p} />))
+}
+
+export const nodeTypes = {
+  root: withTiny(RootCard), category: withTiny(CategoryCard), asset: withTiny(AssetCard), field: withTiny(FieldCard),
+  task: withTiny(TaskCard), member: withTiny(MemberCard),
+}

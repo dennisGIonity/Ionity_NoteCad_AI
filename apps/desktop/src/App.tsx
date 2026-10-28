@@ -38,6 +38,9 @@ export default function App() {
       } else if (e.key === 'Escape') {
         if (rec.state !== 'idle') rec.cancel()
         else useApp.getState().select(null)
+      } else if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {  // typed note
+        e.preventDefault()
+        useApp.getState().requestTyping()
       } else if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const app = useApp.getState()
         app.setView(app.view === 'map' ? 'hud' : 'map')
@@ -87,7 +90,7 @@ export default function App() {
       {!isMap && !inTauri && (
         <div className="pointer-events-none absolute inset-x-0 top-[22%] text-center">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Ionity NoteCad</p>
-          <p className="mt-2 text-sm text-slate-400">Hold <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">Space</kbd> to talk · <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">M</kbd> for the map</p>
+          <p className="mt-2 text-sm text-slate-400">Hold <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">Space</kbd> to talk · <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">/</kbd> to type · <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">M</kbd> for the map</p>
         </div>
       )}
       <div className={cls('pointer-events-none absolute inset-x-0 z-40 transition-all duration-500',

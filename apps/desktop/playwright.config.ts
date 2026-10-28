@@ -14,6 +14,7 @@ export default defineConfig({
     baseURL: process.env.NC_APP_URL ?? 'http://127.0.0.1:8788/app/',
     channel: 'msedge',
     viewport: { width: 1440, height: 900 },
+    colorScheme: 'dark',  // the usual look; the light-mode test switches explicitly
     trace: 'retain-on-failure',
   },
   outputDir: '../../data/desktop/playwright',

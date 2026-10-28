@@ -2,11 +2,14 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 // Tauri v2 expects a fixed dev port and does not want the screen cleared
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // shared, framework-free logic (fold) lives in packages/core
+  resolve: { alias: { '@notecad/core': fileURLToPath(new URL('../../packages/core/src', import.meta.url)) } },
   base: './',  // served from the brain at /app/ and from the Tauri bundle
   clearScreen: false,
   server: { port: 5173, strictPort: true, host: '127.0.0.1' },

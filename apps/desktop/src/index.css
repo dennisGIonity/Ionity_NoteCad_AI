@@ -52,3 +52,40 @@ html.tauri .nc-app-map { background: radial-gradient(1200px 700px at 20% 0%, #0b
   .nc-pulse, .nc-tick, .nc-toast { animation: none; }
   .nc-fill { transition: none; }
 }
+
+/* ------------------------------------------------------------------ folding (ADR 0013) */
+/* grow and fold: cards slide from / into their parent; off under reduced motion (and in JS) */
+.react-flow__node.nc-anim { transition: transform 300ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease-out; }
+.react-flow__node.nc-enter, .react-flow__node.nc-exit { opacity: 0; }
+.react-flow__node.nc-exit { pointer-events: none; }
+.react-flow__edge.nc-edge-enter { animation: nc-edge-in 320ms ease-out both; }
+@keyframes nc-edge-in { from { opacity: 0; } to { opacity: 1; } }
+/* keyboard focus: a clear ring on the card that has it */
+.react-flow__node:focus { outline: none; }
+.react-flow__node:focus-visible .nc-card { outline: 2px solid #38bdf8; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node.nc-anim { transition: none; }
+  .react-flow__edge.nc-edge-enter { animation: none; }
+}
+
+/* ------------------------------------------------------------------ light mode
+   The UI is drawn with the slate scale and white tints on a dark ground. In a light system theme the slate scale is
+   turned round and the tints become dark, so every surface and text colour follows without a second set of classes. */
+@media (prefers-color-scheme: light) {
+  :root:not(.tauri) {
+    --color-slate-50: #020617; --color-slate-100: #0f172a; --color-slate-200: #1e293b; --color-slate-300: #334155;
+    --color-slate-400: #475569; --color-slate-500: #64748b; --color-slate-600: #94a3b8; --color-slate-700: #cbd5e1;
+    --color-slate-800: #e2e8f0; --color-slate-900: #f1f5f9; --color-slate-950: #f8fafc;
+    --color-white: #0f172a;
+    color-scheme: light;
+  }
+  :root:not(.tauri) body {
+    color: #0f172a;
+    background: radial-gradient(1200px 700px at 20% 0%, #dbeafe 0%, transparent 60%),
+                radial-gradient(900px 600px at 100% 100%, #d1fae5 0%, transparent 55%), #f8fafc;
+  }
+  :root:not(.tauri) .nc-card { box-shadow: 0 8px 24px -14px rgb(15 23 42 / 0.35); }
+  :root:not(.tauri) .bg-sky-500, :root:not(.tauri) .bg-rose-500, :root:not(.tauri) .bg-sky-500\/80 { color: #fff; }
+}
+:root { --nc-minimap-mask: rgb(2 6 23 / 0.6); }
+@media (prefers-color-scheme: light) { :root:not(.tauri) { --nc-minimap-mask: rgb(226 232 240 / 0.7); } }

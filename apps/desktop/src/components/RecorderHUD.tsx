@@ -78,6 +78,8 @@ export function RecorderHUD({ docked = false }: { docked?: boolean }) {
   const waveMode = recording ? 'live' : working ? 'busy' : 'idle'
 
   useEffect(() => { if (typing) input.current?.focus() }, [typing])
+  const typeRequest = useApp((s) => s.typeRequest)
+  useEffect(() => { if (typeRequest) setTyping(true) }, [typeRequest])
 
   const ctxTitle = useMemo(() => titleOf(map, rec.contextNodeId), [map, rec.contextNodeId])
 
