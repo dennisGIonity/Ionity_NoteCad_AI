@@ -22,6 +22,7 @@ where they were recorded; the capture row travels).
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import threading
 import time
@@ -31,6 +32,8 @@ from typing import Iterable
 
 from .common import now_iso
 from .db import Database
+
+log = logging.getLogger("notecad.sync")
 
 SEP = "\x1f"  # joins composite primary keys into one text key, the same on SQLite and Postgres
 
@@ -62,7 +65,10 @@ create table if not exists sync_changes (
   origin text not null, ts text not null, origin_seq integer, via text, received_at text);
 create index if not exists sync_changes_row on sync_changes(tbl, pk, ts);
 create index if not exists sync_changes_origin on sync_changes(origin, origin_seq);
-create index if not exists sync_changes_ws on sync_changes(ws)
+create index if not exists sync_changes_ws on sync_changes(ws);
+create table if not exists sync_rejects (
+  id integer primary key autoincrement, tbl text not null, pk text not null, origin text not null, origin_seq integer,
+  ts text, error text not null, change text not null, at text not null)
 """
 JOURNAL_PG = """
 create table if not exists sync_state (key text primary key, value text);
@@ -71,10 +77,17 @@ create table if not exists sync_changes (
   origin text not null, ts text not null, origin_seq bigint, via text, received_at text);
 create index if not exists sync_changes_row on sync_changes(tbl, pk, ts);
 create index if not exists sync_changes_origin on sync_changes(origin, origin_seq);
-create index if not exists sync_changes_ws on sync_changes(ws)
+create index if not exists sync_changes_ws on sync_changes(ws);
+create table if not exists sync_rejects (
+  id bigserial primary key, tbl text not null, pk text not null, origin text not null, origin_seq bigint,
+  ts text, error text not null, change text not null, at text not null)
 """
-PG_FUNCTION = r"""
-create or replace function nc_sync_capture() returns trigger language plpgsql as $f$
+# The workspace lookup for tables without workspace_id comes from TABLES, so a new table needs one edit (TABLES).
+# security definer: an app writing through PostgREST under row-level security can still journal its change.
+# search_path from current: the schema the function is created in (public on Supabase, a test schema in tests).
+PG_FUNCTION_TEMPLATE = r"""
+create or replace function nc_sync_capture() returns trigger language plpgsql security definer
+set search_path from current as $f$
 declare r jsonb; o jsonb; keys text[] := '{}'; c text; w text; src text;
 begin
   if coalesce(current_setting('notecad.applying', true), '') = '1' then return null; end if;
@@ -84,10 +97,7 @@ begin
     if (o - 'synced_at') = (r - 'synced_at') then return null; end if;
   end if;
   foreach c in array TG_ARGV loop keys := keys || (r->>c); end loop;
-  if TG_TABLE_NAME = 'workspaces' then w := r->>'id';
-  elsif TG_TABLE_NAME = 'node_aliases' then select n.workspace_id into w from nodes n where n.id = r->>'node_id';
-  elsif TG_TABLE_NAME = 'capture_events' then select x.workspace_id into w from captures x where x.id = r->>'capture_id';
-  else w := r->>'workspace_id'; end if;
+{WORKSPACE}
   src := coalesce(nullif(current_setting('notecad.worker', true), ''),
                   (select value from sync_state where key = 'worker_id'), 'cloud');
   insert into sync_changes(tbl, pk, op, row, ws, origin, ts)
@@ -97,6 +107,34 @@ begin
   return null;
 end $f$
 """
+
+
+def _pg_workspace() -> str:
+    lines = []
+    for t, (_, how) in TABLES.items():
+        if how == "workspace_id":
+            continue
+        kw = "if" if not lines else "elsif"
+        if ":" in how:
+            parent, col = how.split(":")
+            lines.append(f"  {kw} TG_TABLE_NAME = '{t}' then select x.workspace_id into w from {parent} x "
+                         f"where x.id = r->>'{col}';")
+        else:
+            lines.append(f"  {kw} TG_TABLE_NAME = '{t}' then w := r->>'{how}';")
+    return "\n".join(lines) + "\n  else w := r->>'workspace_id'; end if;"
+
+
+PG_FUNCTION = PG_FUNCTION_TEMPLATE.replace("{WORKSPACE}", _pg_workspace())
+
+
+def pg_triggers() -> list[str]:
+    out = []
+    for t, (pk, _) in TABLES.items():
+        args = ", ".join(f"'{k}'" for k in pk)
+        out.append(f"drop trigger if exists nc_sync_{t} on {t}")
+        out.append(f"create trigger nc_sync_{t} after insert or update or delete on {t} "
+                   f"for each row execute function nc_sync_capture({args})")
+    return out
 
 
 def _ws_sql(table: str, ref: str) -> str:
@@ -138,11 +176,8 @@ def install(db: Database) -> None:
             for stmt in [s.strip() for s in JOURNAL_PG.split(";") if s.strip()]:
                 c.execute(stmt)
             c.execute(PG_FUNCTION)
-            for t, (pk, _) in TABLES.items():
-                args = ", ".join(f"'{k}'" for k in pk)
-                c.execute(f"drop trigger if exists nc_sync_{t} on {t}")
-                c.execute(f"create trigger nc_sync_{t} after insert or update or delete on {t} "
-                          f"for each row execute function nc_sync_capture({args})")
+            for stmt in pg_triggers():
+                c.execute(stmt)
 
 
 @dataclass
@@ -177,6 +212,9 @@ class Journal:
         self.db = db
         install(db)
         self.worker_id = self._worker(worker_id, default_worker)
+        if not self.state("epoch"):  # names this journal: a peer whose hub was wiped sees a new epoch
+            self.set_state("epoch", uuid.uuid4().hex)
+        self.epoch = self.state("epoch")
         self._cols: dict[str, list[str]] = {}
 
     def _worker(self, wanted: str | None, default: str | None) -> str:
@@ -213,9 +251,13 @@ class Journal:
             out.append(ch)
         return out
 
-    def to_push(self, after_seq: int, peer: str | None, limit: int = 500, workspaces: list[str] | None = None) -> list[Change]:
-        """Everything this worker holds after the cursor, except what came from the peer itself."""
+    def to_push(self, after_seq: int, peer: str | None, limit: int = 500, workspaces: list[str] | None = None,
+                upto: int | None = None) -> list[Change]:
+        """Everything this worker holds after the cursor (up to `upto`), except what came from the peer itself."""
         where, args = "seq > ?", [after_seq]
+        if upto is not None:
+            where += " and seq <= ?"
+            args.append(upto)
         if peer:
             where += " and origin <> ? and (via is null or via <> ?)"
             args += [peer, peer]
@@ -287,7 +329,7 @@ class Journal:
 
     def receive(self, changes: Iterable[dict | Change], via: str | None = None, on_applied=None) -> dict:
         """Apply changes from another worker. Returns counts and the node ids whose status must be rolled up."""
-        applied = skipped = dup = 0
+        applied = skipped = dup = rejected = 0
         touched: set[str] = set()
         wss: set[str] = set()
         changes = [c if isinstance(c, Change) else Change.of(c) for c in changes]
@@ -307,11 +349,25 @@ class Journal:
                     if latest and (latest["ts"], latest["origin"]) > (ch.ts, ch.origin):
                         skipped += 1  # this worker changed the row later: last writer wins
                         continue
-                    self._apply_row(ch)
-                    self.db.execute("insert into sync_changes(tbl, pk, op, row, ws, origin, ts, origin_seq, via, received_at) "
-                                    "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                    (ch.tbl, ch.pk, ch.op, json.dumps(ch.row, ensure_ascii=False) if ch.row is not None else None,
-                                     ch.ws, ch.origin, ch.ts, ch.origin_seq, via, now_iso()))
+                    # one savepoint per change: a row that cannot be applied (a constraint, a parent that is gone)
+                    # is set aside in sync_rejects instead of rolling back, and blocking, the whole batch
+                    self.db.execute("savepoint nc_change")
+                    try:
+                        self._apply_row(ch)
+                        self.db.execute("insert into sync_changes(tbl, pk, op, row, ws, origin, ts, origin_seq, via, received_at) "
+                                        "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (ch.tbl, ch.pk, ch.op, json.dumps(ch.row, ensure_ascii=False) if ch.row is not None else None,
+                                         ch.ws, ch.origin, ch.ts, ch.origin_seq, via, now_iso()))
+                        self.db.execute("release savepoint nc_change")
+                    except Exception as ex:  # noqa: BLE001 - any database error on this one row
+                        self.db.execute("rollback to savepoint nc_change")
+                        self.db.execute("release savepoint nc_change")
+                        self.db.execute("insert into sync_rejects(tbl, pk, origin, origin_seq, ts, error, change, at) "
+                                        "values (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (ch.tbl, ch.pk, ch.origin, ch.origin_seq, ch.ts, f"{type(ex).__name__}: {ex}"[:500],
+                                         json.dumps(ch.as_dict(), ensure_ascii=False, default=str), now_iso()))
+                        rejected += 1
+                        continue
                     applied += 1
                     if ch.ws:
                         wss.add(ch.ws)
@@ -324,7 +380,7 @@ class Journal:
                     on_applied(touched)  # status roll-up, still with capture off: derived, so no echo
             finally:
                 self._suppress(False)
-        return {"applied": applied, "skipped": skipped, "duplicates": dup, "touched": sorted(touched),
+        return {"applied": applied, "skipped": skipped, "duplicates": dup, "rejected": rejected, "touched": sorted(touched),
                 "workspaces": sorted(wss)}
 
     def _apply_row(self, ch: Change) -> None:
@@ -333,6 +389,13 @@ class Journal:
         if ch.op == "D":
             self.db.execute(f"delete from {ch.tbl} where " + " and ".join(f"{k}=?" for k in pk_cols), keys)
             return
+        if ch.tbl == "edges":  # two workers linked the same pair: both keep the edge with the smaller id
+            other = self.db.one("select id from edges where src_id=? and dst_id=? and edge_type=? and id<>?",
+                                (ch.row.get("src_id"), ch.row.get("dst_id"), ch.row.get("edge_type"), ch.pk))
+            if other and other["id"] < ch.pk:
+                return
+            if other:
+                self.db.execute("delete from edges where id=?", (other["id"],))
         cols = [c for c in self._columns(ch.tbl) if c in (ch.row or {})]
         if ch.tbl == "action_log":  # it has reached another worker, so it is synced wherever it lands
             ch.row = {**ch.row, "synced_at": ch.row.get("synced_at") or now_iso()}
@@ -344,6 +407,15 @@ class Journal:
                f"on conflict ({', '.join(pk_cols)}) do " +
                (f"update set {', '.join(f'{c}=excluded.{c}' for c in upd)}" if upd else "nothing"))
         self.db.execute(sql, vals)
+
+    def ack(self, requester: str, cursor: int) -> int:
+        """A worker has applied everything up to `cursor` that this journal served it: those action_log rows now
+        exist on another worker, so they are synced here too (the hub's own notes included)."""
+        ids = [r["pk"] for r in self.db.query(
+            "select pk from sync_changes where tbl='action_log' and op='U' and seq <= ? and origin <> ? "
+            "and (via is null or via <> ?)", (cursor, requester, requester))]
+        self.mark_synced(ids)
+        return len(ids)
 
     def mark_synced(self, action_ids: list[str]) -> None:
         if not action_ids:
@@ -373,8 +445,17 @@ class HttpPeer:
     def hello(self) -> str:
         r = self.client.get("/api/v1/sync/status")
         r.raise_for_status()
-        self.id = r.json()["worker_id"]
+        j = r.json()
+        self.id, self.epoch, self.last_seq = j["worker_id"], j.get("epoch"), j.get("journal_seq")
         return self.id
+
+    def ack(self, worker: str, cursor: int) -> None:
+        r = self.client.post("/api/v1/sync/ack", json={"worker": worker, "cursor": cursor})
+        if r.status_code != 404:  # an older hub without /sync/ack
+            r.raise_for_status()
+
+    def close(self) -> None:
+        self.client.close()
 
     def push(self, worker: str, changes: list[Change]) -> dict:
         r = self.client.post("/api/v1/sync/push", json={"worker": worker, "changes": [c.as_dict() for c in changes]})
@@ -392,20 +473,32 @@ class PostgresHub:
     """Supabase (or any Postgres): the hub is the database itself. The apps read it through row-level security;
     workers push and pull through its journal."""
 
+    WINDOW = 64  # Postgres hands out seq at insert but shows rows at commit: re-read a little behind the cursor
+
     def __init__(self, url: str):
         self.journal = Journal(Database(url), default_worker="supabase")
         self.id = self.journal.worker_id
+        self.epoch = self.journal.epoch
+        self.last_seq = None
         self.url = url.split("@")[-1]
 
     def hello(self) -> str:
+        self.last_seq = self.journal.last_seq()
         return self.id
+
+    def ack(self, worker: str, cursor: int) -> None:
+        self.journal.ack(worker, cursor)
+
+    def close(self) -> None:
+        self.journal.db.close()
 
     def push(self, worker: str, changes: list[Change]) -> dict:
         return {k: v for k, v in self.journal.receive(changes, via=worker).items() if k != "touched"}
 
     def pull(self, worker: str, since: int, limit: int, workspaces: list[str] | None) -> dict:
-        ch, cursor, more = self.journal.to_serve(worker, since, limit, workspaces)
-        return {"changes": [c.as_dict() for c in ch], "cursor": cursor, "more": more, "hub": self.id}
+        # a row with a lower seq that committed after the last pull is picked up now; repeats are dropped as duplicates
+        ch, cursor, more = self.journal.to_serve(worker, max(0, since - self.WINDOW), limit, workspaces)
+        return {"changes": [c.as_dict() for c in ch], "cursor": max(cursor, since), "more": more, "hub": self.id}
 
 
 def make_peer(target: str, token: str | None = None, transport=None):
@@ -440,13 +533,36 @@ class SyncEngine:
         self.stats = SyncStats(last_sync_at=self.journal.state("last_sync_at"), last_error=self.journal.state("last_error"))
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self.failures = 0
 
     def _peer(self):
         if self.peer is None:
             self.peer = make_peer(self.target, self.token, self.transport)
-        if getattr(self.peer, "id", None) is None:
             self.peer.hello()
+            self._check_epoch(self.peer)
         return self.peer
+
+    def _check_epoch(self, peer) -> None:
+        """A hub that was wiped and started again has a new journal: send everything again, read from its start."""
+        epoch = getattr(peer, "epoch", None)
+        known = self.journal.state(f"epoch:{peer.id}")
+        hub_last = getattr(peer, "last_seq", None)
+        reset = (epoch and known and epoch != known) or (hub_last is not None and self._cursor("pull") > hub_last)
+        if reset:
+            log.warning("sync hub %s has a new journal: cursors reset", peer.id)
+            self.journal.set_state(f"push:{peer.id}", "0")
+            self.journal.set_state(f"pull:{peer.id}", "0")
+        if epoch:
+            self.journal.set_state(f"epoch:{peer.id}", epoch)
+
+    def _drop_peer(self) -> None:
+        """After an error the next run connects again (a dropped Supabase connection never comes back by itself)."""
+        if self.peer is not None:
+            try:
+                self.peer.close()
+            except Exception:  # noqa: BLE001 - already broken
+                pass
+        self.peer = None
 
     def _cursor(self, kind: str) -> int:
         return int(self.journal.state(f"{kind}:{self.peer.id}", "0") or 0)
@@ -462,20 +578,21 @@ class SyncEngine:
             wss: set[str] = set()
             try:
                 peer = self._peer()
-                # push
+                # push: read the journal's end first, so a note committed while this runs waits for the next run
+                # instead of being stepped over by the cursor
                 cur = self._cursor("push")
+                top = self.journal.last_seq()
                 while True:
-                    batch = self.journal.to_push(cur, peer.id, self.batch, self.workspaces)
+                    batch = self.journal.to_push(cur, peer.id, self.batch, self.workspaces, upto=top)
                     if not batch:
-                        # nothing to send, but the cursor may still move past rows that came from the peer
-                        last = self.journal.last_seq()
-                        if last > cur:
-                            self.journal.set_state(f"push:{peer.id}", str(last))
+                        if top > cur:  # only rows that came from the peer (or other workspaces) are left
+                            self.journal.set_state(f"push:{peer.id}", str(top))
                         break
                     peer.push(self.journal.worker_id, batch)
                     cur = batch[-1].seq
-                    self.journal.set_state(f"push:{peer.id}", str(cur))
-                    self.journal.mark_synced([c.pk for c in batch if c.tbl == "action_log" and c.op == "U"])
+                    with self.journal.db.tx():  # cursor and synced_at move together
+                        self.journal.set_state(f"push:{peer.id}", str(cur))
+                        self.journal.mark_synced([c.pk for c in batch if c.tbl == "action_log" and c.op == "U"])
                     pushed += len(batch)
                 # pull
                 cur = self._cursor("pull")
@@ -490,11 +607,17 @@ class SyncEngine:
                     self.journal.set_state(f"pull:{peer.id}", str(cur))
                     if not res.get("more"):
                         break
+                peer.ack(self.journal.worker_id, cur)  # the hub marks what this worker now has
                 self.stats.last_error = None
+                self.failures = 0
                 self.journal.set_state("last_error", None)
             except Exception as ex:
                 self.stats.last_error = f"{type(ex).__name__}: {ex}"[:300]
                 self.journal.set_state("last_error", self.stats.last_error)
+                self.failures += 1
+                log.warning("sync with %s failed (%d in a row): %s", self._safe_target(), self.failures,
+                            self.stats.last_error)
+                self._drop_peer()
                 return {"ok": False, "error": self.stats.last_error, "pushed": pushed, "pulled": pulled}
             finally:
                 self.stats.runs += 1
@@ -514,7 +637,9 @@ class SyncEngine:
     def status(self) -> dict:
         peer_id = getattr(self.peer, "id", None)
         push_cur = int(self.journal.state(f"push:{peer_id}", "0") or 0) if peer_id else 0
-        return {"worker_id": self.journal.worker_id, "target": self._safe_target(), "peer": peer_id,
+        rejects = self.journal.db.one("select count(*) as c from sync_rejects")["c"]
+        return {"worker_id": self.journal.worker_id, "epoch": self.journal.epoch, "target": self._safe_target(),
+                "peer": peer_id, "rejected": rejects,
                 "interval_s": self.interval if self.target else None, "workspaces": self.workspaces,
                 "pending_changes": self.journal.pending(push_cur, peer_id) if self.target else None,
                 "journal_seq": self.journal.last_seq(), "last_sync_at": self.stats.last_sync_at,
@@ -528,13 +653,20 @@ class SyncEngine:
             return "postgres://…@" + self.target.split("@")[-1].split("?")[0]  # never show the password
         return self.target
 
+    def next_wait(self) -> float:
+        """The interval while sync works; after failures it doubles, up to 5 minutes, with a little jitter."""
+        if not self.failures:
+            return self.interval
+        import random
+        return min(self.interval * 2 ** self.failures, 300.0) * random.uniform(0.85, 1.0)
+
     def loop(self) -> None:
         while not self._stop.is_set():
             try:
                 self.run_once()
-            except Exception:
-                pass
-            self._stop.wait(self.interval)
+            except Exception:  # noqa: BLE001 - run_once reports its own errors; keep the loop alive
+                log.exception("sync loop")
+            self._stop.wait(self.next_wait())
 
     def start(self) -> None:
         if self.target:

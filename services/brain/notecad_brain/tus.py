@@ -152,7 +152,13 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
                 offset = -1
         if offset != info["offset"]:
             raise HTTPException(409, f"offset is {info['offset']}", headers=tus_headers({"Upload-Offset": str(info["offset"])}))
-        with store.data_path(info["id"]).open("ab") as f:
+        path = store.data_path(info["id"])
+        path.touch()
+        with path.open("r+b") as f:
+            # write at the offset the brain recorded, and drop anything after it: bytes written just before a crash
+            # (or a failed save of the offset) would otherwise sit in front of the resumed upload and corrupt the audio
+            f.seek(info["offset"])
+            f.truncate()
             async for chunk in request.stream():
                 if info["offset"] + len(chunk) > info["length"]:
                     raise HTTPException(413, "more bytes than Upload-Length", headers=tus_headers())

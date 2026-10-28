@@ -166,3 +166,106 @@ def test_undo_keeps_a_created_node_that_later_notes_use(farm):
     b.undo(first)
     assert b.graph.node(ram) is not None
     assert b.db.one("select count(*) as c from notes where node_id=?", (ram,))["c"] == 1
+
+
+# ---------------------------------------------------------------- sync (ADR 0012 hardening)
+def _pair():
+    from test_sync import brain, link
+    from farm import seed_farm
+    desk, edge = brain("desktop"), brain("edge-node")
+    ids = seed_farm(desk)
+    return desk, edge, ids, link(desk, edge)
+
+
+def _unsynced(b) -> int:
+    return b.db.one("select count(*) as c from action_log where synced_at is null")["c"]
+
+
+def test_nothing_is_left_unsynced_after_a_sync_both_ways():
+    """Phase 6 gate. Notes made on the hub itself were never marked: only the pusher marked rows."""
+    desk, edge, ids, eng = _pair()
+    desk.process(desk.register_capture(ids["ws"], text="The main water pump is leaking")["capture_id"])
+    assert eng.run_once()["ok"]
+    edge.process(edge.register_capture(ids["ws"], text="Sipho fixed the fence by the south paddock")["capture_id"])
+    assert _unsynced(edge) > 0
+    res = eng.run_once()
+    assert res["ok"] and res["pulled"] > 0
+    assert _unsynced(desk) == 0 and _unsynced(edge) == 0
+
+
+def test_a_note_committed_during_an_empty_push_is_not_skipped():
+    desk, edge, ids, eng = _pair()
+    assert eng.run_once()["ok"]
+    real = desk.journal.to_push
+    injected = []
+
+    def racing(*a, **k):
+        out = real(*a, **k)
+        if not out and not injected:  # the worker thread commits a note right now
+            injected.append(desk.graph.add_node(ids["ws"], ids["sheep"], "Ram 9", "animal"))
+        return out
+    desk.journal.to_push = racing
+    eng.run_once()
+    desk.journal.to_push = real
+    eng.run_once()
+    assert edge.graph.node(injected[0]) is not None
+
+
+def test_one_bad_change_does_not_block_the_batch():
+    from notecad_brain.common import now_iso
+    desk, edge, ids, _ = _pair()
+    good = {"tbl": "profile_facts", "pk": f"{ids['ws']}\x1fcrop", "op": "U", "ws": ids["ws"], "origin": "phone",
+            "ts": "2026-10-28T08:00:00.000Z", "origin_seq": 1,
+            "row": {"workspace_id": ids["ws"], "key": "crop", "value": '"beans"', "confidence": 1, "source": "t",
+                    "updated_at": now_iso()}}
+    bad = {**good, "tbl": "nodes", "pk": "orphan", "origin_seq": 2,
+           "row": {"id": "orphan", "workspace_id": ids["ws"], "parent_id": "no-such-parent", "path": "x", "depth": 1,
+                   "kind": "asset", "title": "Orphan", "status_since": now_iso(), "created_at": now_iso(),
+                   "updated_at": now_iso()}}
+    res = desk.journal.receive([bad, good], via="phone")
+    assert res["applied"] == 1 and res["rejected"] == 1
+    assert desk.db.one("select count(*) as c from sync_rejects")["c"] == 1
+
+
+def test_a_wiped_hub_gets_everything_again():
+    from test_sync import brain, link
+    desk, edge, ids, eng = _pair()
+    assert eng.run_once()["ok"]
+    fresh = brain("edge-node")  # same name, new journal: data\edge-node was deleted
+    eng2 = link(desk, fresh)
+    assert eng2.run_once()["ok"]
+    assert fresh.graph.node(ids["pump"]) is not None
+
+
+def test_sync_backs_off_after_failures():
+    desk, edge, ids, eng = _pair()
+    eng.failures = 0
+    assert eng.next_wait() == eng.interval
+    eng.failures = 3
+    assert eng.interval * 8 * 0.85 <= eng.next_wait() <= min(eng.interval * 8, 300)
+    eng.failures = 20
+    assert eng.next_wait() <= 300
+
+
+def test_two_workers_linking_the_same_pair_keep_one_edge():
+    desk, edge, ids, eng = _pair()
+    assert eng.run_once()["ok"]
+    a = desk.applier._link(ids["ws"], ids["pump"], ids["sipho_node"], "assigned_to", "user")
+    b = edge.applier._link(ids["ws"], ids["pump"], ids["sipho_node"], "assigned_to", "user")
+    assert eng.run_once()["ok"] and eng.run_once()["ok"]
+    q = "select id from edges where src_id=? and dst_id=? and edge_type='assigned_to'"
+    assert [r["id"] for r in desk.db.query(q, (ids["pump"], ids["sipho_node"]))] == [min(a, b)]
+    assert [r["id"] for r in edge.db.query(q, (ids["pump"], ids["sipho_node"]))] == [min(a, b)]
+
+
+def test_supabase_migration_matches_the_brain():
+    """0004 was a hand copy of sync.py; 0005 is generated, and a table added to sync.TABLES must reach it."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    import gen_sync_migration as g
+    from notecad_brain.sync import TABLES
+    assert g.OUT.read_text(encoding="utf-8") == g.render(), "run tools/gen_sync_migration.py"
+    for t in TABLES:
+        assert f"create trigger nc_sync_{t} " in g.render()
+    assert "security definer" in g.render()

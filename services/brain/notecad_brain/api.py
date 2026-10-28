@@ -92,6 +92,11 @@ class SyncPushIn(BaseModel):
     changes: list[dict] = Field(max_length=5000)
 
 
+class SyncAckIn(BaseModel):
+    worker: str = Field(min_length=1, max_length=120)
+    cursor: int = Field(ge=0)
+
+
 class ResolveIn(BaseModel):
     node_id: str
 
@@ -494,6 +499,11 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         ws = [w for w in (workspaces or "").split(",") if w] or None
         changes, cursor, more = brain.journal.to_serve(worker, since, limit, ws)
         return {"hub": brain.journal.worker_id, "changes": [c.as_dict() for c in changes], "cursor": cursor, "more": more}
+
+    @r.post("/v1/sync/ack", dependencies=A)
+    def sync_ack(body: SyncAckIn):
+        """A worker has applied everything up to its pull cursor: the notes it took from here are synced."""
+        return {"hub": brain.journal.worker_id, "marked": brain.journal.ack(body.worker, body.cursor)}
 
     @r.post("/v1/sync/now", dependencies=A)
     async def sync_now():

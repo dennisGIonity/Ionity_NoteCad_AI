@@ -139,3 +139,22 @@ def test_pairing_only_on_this_pc(tmp_path):
     b.settings.bind_host = "127.0.0.1"
     p = desk.get("/api/v1/pairing").json()
     assert not p["ready"] and "-Lan" in p["hint"]
+
+
+def test_stray_bytes_after_a_crash_do_not_corrupt_the_resumed_audio(tmp_path):
+    """Phase 6: the chunk was written but the brain died before saving the offset. The part file is longer than
+    the recorded offset; the resumed PATCH must overwrite, not append after, the stray bytes."""
+    b, ids, c = setup(tmp_path)
+    cid = uuid7()
+    base = f"/api/v1/workspaces/{ids['ws']}/uploads"
+    url = c.post(base, headers={**V, "Upload-Length": str(len(AUDIO)),
+                                "Upload-Metadata": meta(capture_id=cid, filetype="audio/ogg")}).headers["location"].split("testserver")[1]
+    oct_ = {**V, "Content-Type": "application/offset+octet-stream"}
+    assert c.patch(url, headers={**oct_, "Upload-Offset": "0"}, content=AUDIO[:4096]).status_code == 204
+    part = next((tmp_path / "uploads").glob("*.part"))
+    with part.open("ab") as f:
+        f.write(b"\x00" * 1000)  # written, offset never saved
+    assert c.head(url, headers=V).headers["upload-offset"] == "4096"
+    assert c.patch(url, headers={**oct_, "Upload-Offset": "4096"}, content=AUDIO[4096:]).status_code == 204
+    b.run_jobs()  # FakeSTT asserts the bytes are exactly the recording; a corrupt file fails the capture
+    assert b.capture_summary(cid)["state"] in ("applied", "needs_review")
