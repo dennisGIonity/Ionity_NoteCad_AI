@@ -87,6 +87,7 @@ function ContextPicker() {
       {open && (
         <div className="fixed inset-0 z-40 flex flex-col bg-slate-950/95 backdrop-blur-xl" role="dialog" aria-label="Record onto">
           <div className="safe flex items-center gap-2 py-3">
+            {/* biome-ignore lint/a11y/noAutofocus: the owner just tapped "Record onto": typing the branch is the next step */}
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a branch: tractor, field 704…"
               className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[15px] text-slate-100 placeholder:text-slate-500 focus:outline-none" />
             <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10"><X className="size-5" /></button>
@@ -158,6 +159,7 @@ function TypeNote() {
   }
   return (
     <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void sendText(text); setText(''); setOpen(false) }}>
+      {/* biome-ignore lint/a11y/noAutofocus: the owner just tapped "Type a note" */}
       <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Wheel needs changing on the John Deere…"
         aria-label="Note" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[15px] text-slate-100 placeholder:text-slate-500 focus:outline-none" />
       <button type="submit" aria-label="Save note" className="grid size-11 place-items-center rounded-xl bg-sky-500 text-white"><Send className="size-5" /></button>

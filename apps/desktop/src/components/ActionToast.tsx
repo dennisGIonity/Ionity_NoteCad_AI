@@ -38,11 +38,13 @@ export function ActionToast() {
   const recording = useRecorder((r) => r.state !== 'idle')
   const visible = !!cap && finished && !recording && hidden !== cap.id && (fresh || hover || openInbox.length > 0 || cap.state === 'undone')
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new finish time restarts the hide timer
   useEffect(() => {
     if (!finished) return
     const t = setTimeout(() => tick((n) => n + 1), SHOW_MS + 100)
     return () => clearTimeout(t)
   }, [finished, cap?.finishedAt])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new capture clears the last error
   useEffect(() => { setErr(null) }, [activeCapture])
 
   if (!cap || !visible) return null

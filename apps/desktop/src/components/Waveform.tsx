@@ -75,5 +75,5 @@ export function Waveform({ mode, className = '' }: { mode: Mode; className?: str
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  return <canvas ref={ref} className={className} aria-hidden="true" />
+  return <span aria-hidden="true" className="contents"><canvas ref={ref} className={className} /></span>
 }

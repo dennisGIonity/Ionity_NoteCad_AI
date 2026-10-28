@@ -35,6 +35,7 @@ function Toolbar() {
       <span title="Overdue" className="flex items-center gap-1 text-xs text-amber-200"><Bell className="size-3.5" />{s.overdue_tasks}</span>
       {s.inbox > 0 && <span title="Waiting in the Inbox" className="flex items-center gap-1 text-xs text-amber-200"><Inbox className="size-3.5" />{s.inbox}</span>}
       <div className="mx-1 h-5 w-px bg-white/10" />
+      {/* biome-ignore lint/a11y/useSemanticElements: a segmented control, not a form fieldset */}
       <div className="flex rounded-lg bg-white/5 p-0.5" role="group" aria-label="Layout">
         <button type="button" onClick={() => setLayout('tree')} title="Tree layout" aria-pressed={layout === 'tree'}
           className={cls('grid size-7 place-items-center rounded-md', layout === 'tree' ? 'bg-sky-500/25 text-sky-200' : 'text-slate-400 hover:text-white')}><Network className="size-4" /></button>
@@ -63,6 +64,7 @@ function Flow() {
   const first = useRef(true)
 
   useEffect(() => { setNodes(laid.nodes) }, [laid.nodes, setNodes])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fit once per layout switch and on the first draw
   useEffect(() => {
     if (!laid.nodes.length) return
     const t = setTimeout(() => fitView({ duration: first.current ? 0 : 500, padding: 0.12 }), 30)
@@ -71,6 +73,7 @@ function Flow() {
   }, [layout, fitView, laid.nodes.length === 0])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // a note landed: open collapsed branches, then glide to what changed
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs per focus request and per new map, not per render
   useEffect(() => {
     if (!focusRequest || !map) return
     const ids = focusRequest.ids.filter((id) => map.nodes.some((n) => n.id === id))

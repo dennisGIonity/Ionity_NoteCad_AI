@@ -12,7 +12,8 @@
     "typecheck": "tsc -b --noEmit",
     "sync": "npm run build && cap sync",
     "android:apk": "npm run build && cap sync android && cd android && ./gradlew assembleDebug",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "biome lint"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -27,6 +28,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
     "@capacitor/cli": "^8.5.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",

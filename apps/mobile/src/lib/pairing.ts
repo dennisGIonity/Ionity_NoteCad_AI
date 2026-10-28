@@ -12,7 +12,7 @@ const KEY = 'notecad.pairing'
 export function loadPairing(): Pairing | null {
   try {
     const p = JSON.parse(localStorage.getItem(KEY) || 'null')
-    return p && p.url && p.ws ? p : null
+    return p?.url && p.ws ? p : null
   } catch {
     return null
   }

@@ -21,7 +21,7 @@ const VERB: Record<string, string> = {
   link_nodes: 'Link', create_node: 'New branch', upsert_profile_fact: 'Fact',
 }
 
-function describe(h: HistoryItem): string {
+function describeItem(h: HistoryItem): string {
   const d = h.detail as Record<string, unknown>
   if (h.type === 'append_note') return String(d.text ?? '')
   if (h.type === 'create_task') return `${d.title}${d.assignee_hint ? ` → ${d.assignee_hint}` : ''}${d.due_at ? ` · ${due(d.due_at as string)}` : ''}`
@@ -36,15 +36,25 @@ function describe(h: HistoryItem): string {
 }
 
 /** The companion answers in light markdown: **bold** and "* " / "- " bullets. Rendered as text, never as HTML. */
+function keyed(parts: string[]): [string, string, number][] {
+  const seen = new Map<string, number>()  // the same words twice get their own key, without using positions
+  return parts.map((p, i) => {
+    const n = (seen.get(p) ?? 0) + 1
+    seen.set(p, n)
+    return [`${n}:${p}`, p, i]
+  })
+}
+
 function Reply({ text }: { text: string }) {
-  const bold = (line: string) => line.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <strong key={i} className="font-semibold text-white">{part}</strong> : part))
+  const bold = (line: string) => keyed(line.split(/\*\*(.+?)\*\*/g)).map(([k, part, i]) =>
+    i % 2 ? <strong key={k} className="font-semibold text-white">{part}</strong> : <span key={k}>{part}</span>)
   return (
     <div className="mt-1 space-y-1 text-slate-100">
-      {text.split('\n').filter((l) => l.trim()).map((l, i) => {
+      {keyed(text.split('\n').filter((l) => l.trim())).map(([k, l]) => {
         const m = l.match(/^\s*[*-]\s+(.*)$/)
         return m
-          ? <p key={i} className="flex gap-1.5 pl-1"><span className="text-violet-300">•</span><span>{bold(m[1])}</span></p>
-          : <p key={i}>{bold(l)}</p>
+          ? <p key={k} className="flex gap-1.5 pl-1"><span className="text-violet-300">•</span><span>{bold(m[1])}</span></p>
+          : <p key={k}>{bold(l)}</p>
       })}
     </div>
   )
@@ -70,8 +80,10 @@ export function Inspector() {
     } catch { setDetail(null) }
   }, [selected])
 
-  useEffect(() => { setDetail(null); setHistory([]); setAnswer(null); setQuestion(''); void load() }, [selected]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (selected) void load() }, [map?.generated_at]) // eslint-disable-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset and load only when another node is selected
+  useEffect(() => { setDetail(null); setHistory([]); setAnswer(null); setQuestion(''); void load() }, [selected])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when the map changed (a note landed)
+  useEffect(() => { if (selected) void load() }, [map?.generated_at])
 
   const open = !!selected && !!node
   const recordingHere = (rec.state === 'recording' || rec.state === 'arming') && rec.contextNodeId === selected
@@ -197,7 +209,7 @@ export function Inspector() {
                     <li key={h.id} className={cls('relative', h.undone && 'opacity-50')}>
                       <span className="absolute -left-[21px] top-1 grid size-2.5 place-items-center rounded-full bg-slate-500" style={{ background: h.type === 'create_alert' ? '#f43f5e' : h.type === 'create_task' ? '#38bdf8' : h.type === 'update_attributes' ? '#34d399' : '#94a3b8' }} />
                       <p className={cls('text-xs text-slate-200', h.undone && 'line-through')}>
-                        <span className="font-semibold text-slate-100">{VERB[h.type] ?? h.type}</span>{h.channel && <span className="text-slate-400"> · {h.channel}</span>} — {describe(h)}
+                        <span className="font-semibold text-slate-100">{VERB[h.type] ?? h.type}</span>{h.channel && <span className="text-slate-400"> · {h.channel}</span>} — {describeItem(h)}
                       </p>
                       <p className="mt-0.5 text-[10px] text-slate-500">
                         {ago(h.at)}{h.router ? ` · ${h.router}` : ''}{h.actor === 'user:inbox' ? ' · placed by you' : ''}{h.undone ? ' · undone' : ''}

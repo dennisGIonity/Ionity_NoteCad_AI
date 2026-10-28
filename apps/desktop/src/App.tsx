@@ -56,7 +56,7 @@ export default function App() {
     window.addEventListener('keyup', up)
     window.addEventListener('blur', lost)
     document.addEventListener('visibilitychange', hidden)
-    let off = () => undefined as void
+    let off: () => void = () => {}
     void onHotkey((s) => {
       const rec = useRecorder.getState()
       if (s === 'pressed' && rec.state === 'idle') void rec.start(useApp.getState().selected)

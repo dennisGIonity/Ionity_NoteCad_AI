@@ -42,8 +42,10 @@ export function PairPhone({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: a click on the backdrop closes; Escape is handled above
     <div role="dialog" aria-modal="true" aria-labelledby="pair-title"
       className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: keeps backdrop clicks off the panel */}
       <div className="nc-glass w-full max-w-sm rounded-3xl p-5 text-slate-300 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 id="pair-title" className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Smartphone className="size-4 text-sky-300" />Pair a phone</h2>
@@ -62,17 +64,19 @@ export function PairPhone({ onClose }: { onClose: () => void }) {
         {p?.ready && (
           <>
             <p className="mt-2 text-xs text-slate-400">Install NoteCad on the phone, open it and scan this code (or point the camera app at it). The phone saves notes offline and sends them when it is on this network.</p>
-            <div className="mx-auto mt-4 aspect-square w-60 overflow-hidden rounded-2xl bg-white p-2 [&>svg]:h-full [&>svg]:w-full"
-              aria-label="Pairing QR code" role="img" dangerouslySetInnerHTML={svg ? { __html: svg } : undefined} />
+            <div className="mx-auto mt-4 aspect-square w-60 overflow-hidden rounded-2xl bg-white p-2">
+              {svg && <img className="size-full" alt="Pairing QR code" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />}
+            </div>
             {p.urls.length > 1 && (
-              <div className="mt-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Network address">
+              <fieldset className="m-0 mt-3 flex min-w-0 flex-wrap gap-1.5 border-0 p-0">
+                <legend className="sr-only">Network address</legend>
                 {p.urls.map((u, i) => (
-                  <button key={u} type="button" role="radio" aria-checked={i === pick} onClick={() => setPick(i)}
+                  <button key={u} type="button" aria-pressed={i === pick} onClick={() => setPick(i)}
                     className={cls('rounded-full border px-2 py-0.5 text-[11px]', i === pick ? 'border-sky-400/60 bg-sky-500/20 text-sky-100' : 'border-white/10 text-slate-400 hover:bg-white/5')}>
                     {u.replace('http://', '')}
                   </button>
                 ))}
-              </div>
+              </fieldset>
             )}
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
               <dt className="text-slate-500">Brain</dt><dd className="truncate text-slate-200">{p.urls[pick]}</dd>

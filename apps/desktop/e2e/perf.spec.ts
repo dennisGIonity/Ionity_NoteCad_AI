@@ -11,7 +11,7 @@ const OUT = '../../data/desktop/perf.jsonl'
 
 function record(name: string, value: unknown) {
   mkdirSync('../../data/desktop', { recursive: true })
-  appendFileSync(OUT, JSON.stringify({ at: new Date().toISOString(), name, value }) + '\n')
+  appendFileSync(OUT, `${JSON.stringify({ at: new Date().toISOString(), name, value })}\n`)
   console.log(name, JSON.stringify(value))
 }
 

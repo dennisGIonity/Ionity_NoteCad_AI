@@ -58,7 +58,7 @@ export function Ring({ pct, size = 44, stroke = 4, color = '#34d399', children }
   const v = Math.max(0, Math.min(100, pct ?? 0))
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(148,163,184,0.18)" strokeWidth={stroke} fill="none" />
         {pct != null && (
           <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"

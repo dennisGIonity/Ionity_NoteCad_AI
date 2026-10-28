@@ -218,7 +218,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
     r.stop()
     await done
     cancelAnimationFrame(raf)
-    stream?.getTracks().forEach((t) => t.stop())
+    for (const t of stream?.getTracks() ?? []) t.stop()
     actx?.close().catch(() => undefined)
     const type = (r.mimeType || 'audio/webm').split(';')[0]
     const blob = new Blob(chunks, { type })
@@ -309,7 +309,7 @@ async function send(p: Pairing, it: OutboxItem, set: (s: Partial<PhoneState>) =>
       state: 'failed', error: err, attempts,
       nextTryAt: retryable ? Date.now() + RETRY[Math.min(attempts - 1, RETRY.length - 1)] : Number.MAX_SAFE_INTEGER,
     })
-    set({ reachable: retryable ? false : true })
+    set({ reachable: !retryable })
     return false
   }
   if (it.kind === 'text') {

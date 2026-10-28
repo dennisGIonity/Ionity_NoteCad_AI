@@ -13,7 +13,8 @@
     "typecheck": "tsc -b --noEmit",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint": "biome lint"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
@@ -26,6 +27,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.12.4",

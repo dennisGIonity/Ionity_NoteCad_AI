@@ -37,7 +37,7 @@ function release() {
   rec = null
   chunks = []
   clearTimeout(maxTimer)
-  stream?.getTracks().forEach((t) => t.stop())
+  for (const t of stream?.getTracks() ?? []) t.stop()
   stream = null
   analyser = null
   ctx?.close().catch(() => undefined)
