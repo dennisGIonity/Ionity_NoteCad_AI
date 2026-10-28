@@ -8,6 +8,7 @@ Run:  uvicorn notecad_companion.api:app --host 127.0.0.1 --port 8787
 from __future__ import annotations
 
 import re
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -25,16 +26,19 @@ from .store import Store
 OWNER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None):
+def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None, token: str | None = None):
     """Open tasks, alerts and the mind map's facts (what needs work, how far along things are) from the NoteCad
     brain, as short lines for the prompt. The owner id is the workspace id. focus: the node the owner has open on
     the map, so "this one" / "hier" in a question means that node."""
     import httpx
 
     def fetch(focus: str | None = None) -> list[str]:
-        with httpx.Client(timeout=timeout, transport=transport) as c:
-            d = c.get(f"{base_url.rstrip('/')}/v1/workspaces/{workspace_id}/digest",
-                      params={"focus": focus} if focus else None).json()
+        with httpx.Client(timeout=timeout, transport=transport,
+                          headers={"Authorization": f"Bearer {token}"} if token else None) as c:
+            r = c.get(f"{base_url.rstrip('/')}/v1/workspaces/{workspace_id}/digest",
+                      params={"focus": focus} if focus else None)
+            r.raise_for_status()  # a 401 is an error to report, not an empty farm
+            d = r.json()
         lines = []
         f = d.get("focus")
         if f:
@@ -76,7 +80,16 @@ class Registry:
         self.embedder = embedder if embedder is not None else make_embedder(settings)
         self._owners: dict[str, Companion] = {}
         self._lock = threading.Lock()
-        self.model_lock = threading.Lock()  # llama.cpp contexts are not thread safe
+        # llama.cpp contexts in this process are not thread safe; Ollama (a separate server) needs no lock, so owners
+        # are not queued behind each other's model calls
+        in_process = any(type(x).__name__.startswith("Llama") for x in (self.llm, self.embedder))
+        self.model_lock = threading.Lock() if in_process else contextlib.nullcontext()
+
+    @contextlib.contextmanager
+    def using(self, c: Companion):
+        """One request at a time per owner (their store), and the model lock when the model is in this process."""
+        with c.lock, self.model_lock:
+            yield c
 
     def get(self, owner_id: str) -> Companion:
         if not OWNER_ID.match(owner_id):
@@ -88,7 +101,9 @@ class Registry:
                     store, self.llm, self.embedder, history_turns=self.settings.history_turns,
                     memory_top_k=self.settings.memory_top_k, max_reply_tokens=self.settings.max_reply_tokens,
                     llm_fact_extraction=self.settings.llm_fact_extraction,
-                    open_work=brain_digest(self.settings.brain_url, owner_id) if self.settings.brain_url else None)
+                    open_work=brain_digest(self.settings.brain_url, owner_id, token=self.settings.brain_token)
+                    if self.settings.brain_url else None)
+                self._owners[owner_id].lock = threading.RLock()
             return self._owners[owner_id]
 
     def drop(self, owner_id: str) -> None:
@@ -161,7 +176,7 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
     @app.post("/v1/{owner_id}/chat")
     def chat(body: ChatIn, c: Companion = Depends(owner)):
         t0 = time.perf_counter()
-        with reg.model_lock:
+        with reg.using(c):
             out = c.chat(body.text, context_node_id=body.context_node_id)
         out["ms"] = round((time.perf_counter() - t0) * 1000)
         return out
@@ -169,19 +184,20 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
     @app.post("/v1/{owner_id}/feedback")
     def feedback(body: FeedbackIn, c: Companion = Depends(owner)):
         try:
-            with reg.model_lock:
+            with reg.using(c):
                 return c.feedback(body.interaction_id, body.rating, body.edited_reply, body.comment)
         except KeyError:
             raise HTTPException(404, "no such interaction")
 
     @app.post("/v1/{owner_id}/observe")
     def observe(body: ObserveIn, c: Companion = Depends(owner)):
-        with reg.model_lock:
+        with reg.using(c):
             return c.observe(body.text, source=body.source, ts=body.ts, node_path=body.node_path)
 
     @app.put("/v1/{owner_id}/facts")
     def put_fact(body: FactIn, c: Companion = Depends(owner)):
-        return c.learner.put_fact(body.key, body.value, 0.99, "user")
+        with reg.using(c):
+            return c.learner.put_fact(body.key, body.value, 0.99, "user")
 
     @app.delete("/v1/{owner_id}/facts/{key}")
     def delete_fact(key: str, c: Companion = Depends(owner)):
@@ -191,7 +207,8 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
 
     @app.get("/v1/{owner_id}/card")
     def card(c: Companion = Depends(owner)):
-        return c.card()
+        with reg.using(c):
+            return c.card()
 
     @app.get("/v1/{owner_id}/keyterms")
     def keyterms(limit: int = 100, c: Companion = Depends(owner)):
@@ -203,13 +220,14 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
 
     @app.post("/v1/{owner_id}/consolidate")
     def consolidate(c: Companion = Depends(owner)):
-        return c.consolidate()
+        with reg.using(c):
+            return c.consolidate()
 
     @app.post("/v1/{owner_id}/route-offline")
     def route_offline(body: RouteIn, c: Companion = Depends(owner)):
         if reg.llm is None:
             raise HTTPException(503, "no local model loaded")
-        with reg.model_lock:
+        with reg.using(c):
             return c.route_offline(body.event, [x.model_dump() for x in body.candidates], body.capture_id,
                                    body.event_index)
 

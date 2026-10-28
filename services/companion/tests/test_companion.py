@@ -441,3 +441,39 @@ def test_map_lines_and_focus_from_the_brain_reach_the_prompt():
             "2800 of 3000 ha planted (93.3%); open tasks: Finish the last 200 ha; latest notes: Planted 400 ha today.") in system
     c.chat("And what about the tractors?", now=MON_9AM)  # no node open: no focus asked for
     assert asked[-1] is None
+
+
+# ------------------------------------------------------------------ Phase 6 regressions (ADR 0013)
+def test_route_offline_survives_a_list_or_a_word_for_confidence():
+    for reply in ('[{"node_id": "n-pump"}]', '{"node_id": "n-pump", "kind": "note", "confidence": "high"}'):
+        c = make(ScriptedLLM(lambda m, s, r=reply: r))
+        out = c.route_offline("pump", [{"node_id": "n-pump", "path": "P"}], "cap-3")
+        assert out["actions"][0]["type"] == "ask_user"
+
+
+def test_brain_digest_sends_the_token_and_reports_a_refusal():
+    import httpx
+    from notecad_companion.api import brain_digest
+    seen = []
+
+    def handler(req):
+        seen.append(req.headers.get("authorization"))
+        return httpx.Response(401, json={"detail": "missing or wrong token"})
+    fetch = brain_digest("http://brain", "ws1", transport=httpx.MockTransport(handler), token="s3cret")
+    with pytest.raises(httpx.HTTPStatusError):
+        fetch()
+    assert seen == ["Bearer s3cret"]
+
+
+def test_owners_are_not_queued_behind_each_other_on_ollama(tmp_path):
+    import contextlib
+    from notecad_companion.api import Registry
+    from notecad_companion.config import Settings
+    s = Settings()
+    s.data_dir = str(tmp_path)
+    reg = Registry(s, ScriptedLLM(), HashEmbedder(64))  # not an in-process llama.cpp model
+    assert isinstance(reg.model_lock, contextlib.nullcontext)
+    a, b = reg.get("owner-a"), reg.get("owner-b")
+    with reg.using(a):
+        assert b.lock.acquire(blocking=False)  # owner B is free while A is busy
+        b.lock.release()

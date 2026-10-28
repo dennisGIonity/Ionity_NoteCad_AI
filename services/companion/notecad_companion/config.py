@@ -42,5 +42,7 @@ class Settings:
     history_turns: int = field(default_factory=lambda: int(_env("HISTORY_TURNS", "6")))
     memory_top_k: int = field(default_factory=lambda: int(_env("MEMORY_TOP_K", "5")))
     llm_fact_extraction: bool = field(default_factory=lambda: _env("LLM_FACTS", "1") == "1")
-    brain_url: str | None = field(default_factory=lambda: _env("BRAIN_URL"))  # e.g. http://127.0.0.1:8788
+    brain_url: str | None = field(default_factory=lambda: _env("BRAIN_URL"))
+    # a brain off this PC needs its API token (the brain's NC_BRAIN_API_TOKEN)
+    brain_token: str | None = field(default_factory=lambda: _env("BRAIN_TOKEN") or os.environ.get("NC_BRAIN_API_TOKEN"))  # e.g. http://127.0.0.1:8788
     api_token: str | None = field(default_factory=lambda: _env("API_TOKEN"))

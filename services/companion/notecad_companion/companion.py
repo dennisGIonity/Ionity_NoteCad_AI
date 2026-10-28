@@ -252,8 +252,13 @@ class Companion:
         return self._to_actions(raw, ids, event, capture_id, event_index)
 
     @staticmethod
-    def _to_actions(raw: dict, ids: list[str], event: str, capture_id: str, event_index: int) -> dict:
-        conf = float(raw.get("confidence", 0) or 0)
+    def _to_actions(raw, ids: list[str], event: str, capture_id: str, event_index: int) -> dict:
+        if not isinstance(raw, dict):  # the model answered a JSON list or a bare value
+            raw = {}
+        try:
+            conf = float(raw.get("confidence", 0) or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
         node = raw.get("node_id")
         text = (raw.get("text") or event).strip()
         if node not in ids or conf < 0.6:
