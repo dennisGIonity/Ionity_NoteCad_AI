@@ -122,16 +122,16 @@ def test_phones_need_the_token_this_pc_does_not(tmp_path):
     assert phone.post(base, headers={**V, "Upload-Length": "10"}).status_code == 401
     assert phone.post(base, headers={**V, "Upload-Length": "10", "Authorization": "Bearer farm-secret"}).status_code == 201
     assert phone.get(f"/api/v1/workspaces/{ids['ws']}/mindmap").status_code == 401
-    desk = TestClient(create_app(b), client=("127.0.0.1", 50000))
+    desk = TestClient(create_app(b), client=("127.0.0.1", 50000), base_url="http://127.0.0.1:8788")
     assert desk.get(f"/api/v1/workspaces/{ids['ws']}/mindmap").status_code == 200
     b.settings.trust_loopback = False
-    assert TestClient(create_app(b), client=("127.0.0.1", 50001)).get(f"/api/v1/workspaces/{ids['ws']}/mindmap").status_code == 401
+    assert TestClient(create_app(b), client=("127.0.0.1", 50001), base_url="http://127.0.0.1:8788").get(f"/api/v1/workspaces/{ids['ws']}/mindmap").status_code == 401
 
 
 def test_pairing_only_on_this_pc(tmp_path):
     b, ids, phone = setup(tmp_path, api_token="farm-secret", bind_host="0.0.0.0")
     assert phone.get("/api/v1/pairing").status_code in (401, 403)
-    desk = TestClient(create_app(b), client=("127.0.0.1", 50000))
+    desk = TestClient(create_app(b), client=("127.0.0.1", 50000), base_url="http://127.0.0.1:8788")
     p = desk.get(f"/api/v1/pairing?ws={ids['ws']}").json()
     assert p["lan"] and p["token_set"] and p["workspace"] == ids["ws"]
     assert all(l.startswith("notecad://pair?u=http") and "t=farm-secret" in l for l in p["links"])

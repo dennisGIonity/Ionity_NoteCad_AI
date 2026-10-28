@@ -154,6 +154,12 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
             raise HTTPException(409, f"offset is {info['offset']}", headers=tus_headers({"Upload-Offset": str(info["offset"])}))
         path = store.data_path(info["id"])
         path.touch()
+        if path.stat().st_size < info["offset"]:
+            # the offset was saved but the bytes never reached the disk: continue from what is really there, never
+            # from a gap (seek + truncate past the end would pad the recording with silence)
+            info["offset"] = path.stat().st_size
+            store.save(info)
+            raise HTTPException(409, f"offset is {info['offset']}", headers=tus_headers({"Upload-Offset": str(info["offset"])}))
         with path.open("r+b") as f:
             # write at the offset the brain recorded, and drop anything after it: bytes written just before a crash
             # (or a failed save of the offset) would otherwise sit in front of the resumed upload and corrupt the audio

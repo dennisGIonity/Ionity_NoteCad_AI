@@ -119,7 +119,8 @@ class Graph:
         """'Vehicles > Tractors > John Deere 9550 #1': one recursive query (it was one query per ancestor)."""
         chain = self.db.query("with recursive up(id, parent_id, title, kind, d) as ("
                               "select id, parent_id, title, kind, 0 from nodes where id=? union all "
-                              "select n.id, n.parent_id, n.title, n.kind, up.d + 1 from nodes n join up on n.id = up.parent_id) "
+                              "select n.id, n.parent_id, n.title, n.kind, up.d + 1 from nodes n join up on n.id = up.parent_id "
+                              "where up.d < 64) "
                               "select title, kind from up order by d desc", (node_id,))
         return sep.join(c["title"] for c in chain if include_root or c["kind"] != "root")
 
@@ -132,10 +133,13 @@ class Graph:
         def path(nid: str) -> str:
             if nid in memo:
                 return memo[nid]
-            chain, cur = [], by.get(nid)
-            while cur is not None and cur["id"] not in memo:
+            chain, cur, seen = [], by.get(nid), set()
+            while cur is not None and cur["id"] not in memo and cur["id"] not in seen:  # a parent cycle (two moves
+                seen.add(cur["id"])                                                    # met in sync) ends the walk
                 chain.append(cur)
                 cur = by.get(cur["parent_id"]) if cur["parent_id"] else None
+            if cur is not None and cur["id"] in seen:
+                cur = None
             base = memo[cur["id"]] if cur is not None else ""
             for n in reversed(chain):
                 own = "" if n["kind"] == "root" else n["title"]

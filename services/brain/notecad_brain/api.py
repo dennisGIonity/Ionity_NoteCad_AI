@@ -95,6 +95,7 @@ class SyncPushIn(BaseModel):
 class SyncAckIn(BaseModel):
     worker: str = Field(min_length=1, max_length=120)
     cursor: int = Field(ge=0)
+    workspaces: list[str] | None = None
 
 
 class ResolveIn(BaseModel):
@@ -160,9 +161,25 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     r = APIRouter()
 
     LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+    _ips: list[str] = []
+
+    def lan_ips() -> list[str]:
+        if not _ips:
+            try:
+                import socket as _s
+                _ips.extend(str(a[-1][0]) for a in _s.getaddrinfo(_s.gethostname(), None, _s.AF_INET))
+            except OSError:
+                pass
+            _ips.append("-")  # looked once
+        return _ips
 
     def is_local(request: Request) -> bool:
         return bool(request.client) and request.client.host in LOOPBACK
+
+    def local_host(request: Request) -> bool:
+        """The Host this PC's own clients use: loopback names, or this PC's LAN address when phones are on."""
+        host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        return host in LOOPBACK or host == settings.bind_host or host in lan_ips()
 
     allowed_origins = set(origins)
 
@@ -188,6 +205,10 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
             return
         if foreign:
             raise HTTPException(403, "this origin may not change NoteCad without the token")
+        if is_local(request) and not local_host(request):
+            # a page on this PC whose name was pointed at 127.0.0.1 (DNS rebinding) sends no Origin on a GET; its
+            # Host is its own name, not this PC's, so without the token it reads nothing
+            raise HTTPException(403, "use http://127.0.0.1 or localhost on this PC, or send the token")
         if not settings.api_token or (settings.trust_loopback and is_local(request)):
             return
         raise HTTPException(401, "missing or wrong token")
@@ -511,7 +532,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     @r.post("/v1/sync/ack", dependencies=A)
     def sync_ack(body: SyncAckIn):
         """A worker has applied everything up to its pull cursor: the notes it took from here are synced."""
-        return {"hub": brain.journal.worker_id, "marked": brain.journal.ack(body.worker, body.cursor)}
+        return {"hub": brain.journal.worker_id, "marked": brain.journal.ack(body.worker, body.cursor, body.workspaces)}
 
     @r.post("/v1/sync/now", dependencies=A)
     async def sync_now():
@@ -582,7 +603,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     @r.get("/v1/pairing")
     def pairing(request: Request, ws: str | None = None):
         """For the desktop app only: what a phone needs to connect (shown as a QR code to scan with the phone)."""
-        if not is_local(request):
+        if not is_local(request) or not local_host(request):  # this PC, by its own name (no rebound domain)
             raise HTTPException(403, "pairing is only shown on this PC")
         import socket
         from urllib.parse import urlencode

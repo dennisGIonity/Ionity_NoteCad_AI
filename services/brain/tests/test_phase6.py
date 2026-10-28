@@ -429,3 +429,92 @@ def test_undo_keeps_an_alias_the_owner_already_had(farm):
         b.resolve_inbox(item["id"], ids["pump"])
     b.undo(cid)
     assert "the stuff" in b.graph.aliases(ids["pump"])
+
+
+# ---------------------------------------------------------------- Stage 5 review: sync rejects and acks
+def test_a_row_set_aside_applies_when_its_parent_arrives():
+    from notecad_brain.common import now_iso
+    desk, edge, ids, _ = _pair()
+    row = lambda nid, parent, depth: {"id": nid, "workspace_id": ids["ws"], "parent_id": parent, "path": nid, "depth": depth,  # noqa: E731
+                                     "kind": "group", "title": nid, "status_since": now_iso(), "created_at": now_iso(),
+                                     "updated_at": now_iso()}
+    ch = lambda nid, parent, depth, seq: {"tbl": "nodes", "pk": nid, "op": "U", "ws": ids["ws"], "origin": "phone",  # noqa: E731
+                                          "ts": f"2026-10-28T08:00:0{seq}.000Z", "origin_seq": seq, "row": row(nid, parent, depth)}
+    assert desk.journal.receive([ch("child", "parent", 2, 2)], via="phone")["rejected"] == 1   # the child came first
+    desk.journal.receive([ch("child", "parent", 2, 2)], via="phone")  # sent again: still one row aside
+    assert desk.db.one("select count(*) as c from sync_rejects")["c"] == 1
+    desk.journal.receive([ch("parent", ids["root"], 1, 1)], via="phone")
+    assert desk.graph.node("child") is not None
+    assert desk.db.one("select count(*) as c from sync_rejects")["c"] == 0
+
+
+def test_the_pusher_leaves_rows_the_hub_set_aside_unsynced():
+    desk, edge, ids, eng = _pair()
+    assert eng.run_once()["ok"]
+    desk.process(desk.register_capture(ids["ws"], text="The main water pump is leaking")["capture_id"])
+    real = eng.peer.push
+
+    def refusing(worker, changes):
+        out = real(worker, changes)
+        return {**out, "rejected_keys": [{"tbl": c.tbl, "pk": c.pk} for c in changes if c.tbl == "action_log"]}
+    eng.peer.push = refusing
+    assert eng.run_once()["ok"]
+    assert _unsynced(desk) > 0
+
+
+def test_ack_looks_only_at_what_is_new():
+    desk, edge, ids, eng = _pair()
+    assert eng.run_once()["ok"]
+    cur = edge.journal.last_seq()
+    assert edge.journal.ack("desktop", cur) == 0  # already acknowledged by the run
+    edge.process(edge.register_capture(ids["ws"], text="Sheep moved to the south paddock")["capture_id"])
+    assert eng.run_once()["ok"] and _unsynced(edge) == 0
+    assert edge.journal.state("ack:desktop") == str(desk.journal.state(f"pull:{edge.journal.worker_id}"))
+
+
+def test_a_rebound_name_on_this_pc_reads_nothing_without_the_token(tmp_path):
+    """DNS rebinding: evil.example pointed at 127.0.0.1 makes same-origin GETs (no Origin header) from this PC."""
+    from fastapi.testclient import TestClient
+    from farm import make_brain, seed_farm
+    from notecad_brain.api import create_app
+    b = make_brain(f"sqlite:///{tmp_path / 'b.db'}")
+    ids = seed_farm(b)
+    b.settings.worker = False
+    url = f"/api/v1/workspaces/{ids['ws']}/export"
+    rebound = TestClient(create_app(b), client=("127.0.0.1", 50002), base_url="http://evil.example:8788")
+    assert rebound.get(url).status_code == 403
+    assert rebound.get("/api/v1/pairing").status_code == 403
+    mine = TestClient(create_app(b), client=("127.0.0.1", 50003), base_url="http://localhost:8788")
+    assert mine.get(url).status_code == 200
+
+
+def test_a_resume_never_fills_a_gap_with_silence(tmp_path):
+    import base64
+    from fastapi.testclient import TestClient
+    from farm import make_brain, seed_farm
+    from notecad_brain.api import create_app
+    b = make_brain(f"sqlite:///{tmp_path / 'b.db'}", audio_dir=str(tmp_path / "audio"))
+    ids = seed_farm(b)
+    b.settings.worker = False
+    c = TestClient(create_app(b))
+    v = {"Tus-Resumable": "1.0.0"}
+    meta = "filetype " + base64.b64encode(b"audio/ogg").decode()
+    url = c.post(f"/api/v1/workspaces/{ids['ws']}/uploads", headers={**v, "Upload-Length": "100", "Upload-Metadata": meta}).headers["location"].split("testserver")[1]
+    oct_ = {**v, "Content-Type": "application/offset+octet-stream"}
+    assert c.patch(url, headers={**oct_, "Upload-Offset": "0"}, content=b"x" * 40).status_code == 204
+    part = next((tmp_path / "uploads").glob("*.part"))
+    part.write_bytes(b"x" * 25)  # the last 15 bytes never reached the disk
+    r = c.patch(url, headers={**oct_, "Upload-Offset": "40"}, content=b"y" * 60)
+    assert r.status_code == 409 and r.headers["upload-offset"] == "25"
+    assert c.patch(url, headers={**oct_, "Upload-Offset": "25"}, content=b"y" * 75).status_code == 204
+    from pathlib import Path
+    audio = Path(b.db.one("select audio_path from captures")["audio_path"]).read_bytes()
+    assert audio == b"x" * 25 + b"y" * 75  # no zeros where the lost bytes were
+
+
+def test_a_parent_cycle_does_not_hang_paths(farm):
+    from notecad_brain.graph import Graph
+    b, ids = farm
+    b.db.execute("update nodes set parent_id=? where id=?", (ids["sheep"], ids["livestock"]))  # two moves met in sync
+    assert isinstance(b.graph.path_titles(ids["sheep"]), str)
+    assert ids["sheep"] in Graph.paths(b.graph.nodes(ids["ws"]))

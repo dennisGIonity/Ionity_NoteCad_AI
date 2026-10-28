@@ -200,7 +200,9 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
 
     @app.delete("/v1/{owner_id}/facts/{key}")
     def delete_fact(key: str, c: Companion = Depends(owner)):
-        if not c.store.delete_fact(key):
+        with reg.using(c):
+            gone = c.store.delete_fact(key)
+        if not gone:
             raise HTTPException(404, "no such fact")
         return {"deleted": key}
 

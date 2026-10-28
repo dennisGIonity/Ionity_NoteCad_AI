@@ -332,8 +332,15 @@ class Journal:
         applied = skipped = dup = rejected = 0
         touched: set[str] = set()
         wss: set[str] = set()
+        rejected_keys: list[dict] = []
         changes = [c if isinstance(c, Change) else Change.of(c) for c in changes]
         with self.db.tx():
+            # rows set aside earlier (a parent that had not arrived, a delete that met a child) get another go after
+            # this batch; whatever still fails goes back into sync_rejects, once
+            retry = self.db.query("select id, change from sync_rejects order by id")
+            if retry:
+                self.db.execute("delete from sync_rejects")
+                changes = changes + [Change.of(json.loads(r["change"])) for r in retry]
             self._suppress(True)
             try:
                 for ch in changes:
@@ -362,11 +369,13 @@ class Journal:
                     except Exception as ex:  # noqa: BLE001 - any database error on this one row
                         self.db.execute("rollback to savepoint nc_change")
                         self.db.execute("release savepoint nc_change")
-                        self.db.execute("insert into sync_rejects(tbl, pk, origin, origin_seq, ts, error, change, at) "
-                                        "values (?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (ch.tbl, ch.pk, ch.origin, ch.origin_seq, ch.ts, f"{type(ex).__name__}: {ex}"[:500],
-                                         json.dumps(ch.as_dict(), ensure_ascii=False, default=str), now_iso()))
+                        if not self.db.one("select 1 from sync_rejects where origin=? and origin_seq=?", (ch.origin, ch.origin_seq)):
+                            self.db.execute("insert into sync_rejects(tbl, pk, origin, origin_seq, ts, error, change, at) "
+                                            "values (?, ?, ?, ?, ?, ?, ?, ?)",
+                                            (ch.tbl, ch.pk, ch.origin, ch.origin_seq, ch.ts, f"{type(ex).__name__}: {ex}"[:500],
+                                             json.dumps(ch.as_dict(), ensure_ascii=False, default=str), now_iso()))
                         rejected += 1
+                        rejected_keys.append({"tbl": ch.tbl, "pk": ch.pk})
                         continue
                     applied += 1
                     if ch.ws:
@@ -380,8 +389,8 @@ class Journal:
                     on_applied(touched)  # status roll-up, still with capture off: derived, so no echo
             finally:
                 self._suppress(False)
-        return {"applied": applied, "skipped": skipped, "duplicates": dup, "rejected": rejected, "touched": sorted(touched),
-                "workspaces": sorted(wss)}
+        return {"applied": applied, "skipped": skipped, "duplicates": dup, "rejected": rejected,
+                "rejected_keys": rejected_keys, "touched": sorted(touched), "workspaces": sorted(wss)}
 
     def _apply_row(self, ch: Change) -> None:
         pk_cols = TABLES[ch.tbl][0]
@@ -408,13 +417,22 @@ class Journal:
                (f"update set {', '.join(f'{c}=excluded.{c}' for c in upd)}" if upd else "nothing"))
         self.db.execute(sql, vals)
 
-    def ack(self, requester: str, cursor: int) -> int:
+    def ack(self, requester: str, cursor: int, workspaces: list[str] | None = None) -> int:
         """A worker has applied everything up to `cursor` that this journal served it: those action_log rows now
-        exist on another worker, so they are synced here too (the hub's own notes included)."""
-        ids = [r["pk"] for r in self.db.query(
-            "select pk from sync_changes where tbl='action_log' and op='U' and seq <= ? and origin <> ? "
-            "and (via is null or via <> ?)", (cursor, requester, requester))]
+        exist on another worker, so they are synced here too (the hub's own notes included). Only rows after the
+        worker's last ack and inside the workspaces it pulls are looked at, so the cost does not grow with history."""
+        key = f"ack:{requester}" + (f":{','.join(sorted(workspaces))}" if workspaces else "")
+        since = int(self.state(key, "0") or 0)
+        if cursor <= since:
+            return 0
+        where, args = "tbl='action_log' and op='U' and seq > ? and seq <= ? and origin <> ? and (via is null or via <> ?)", \
+            [since, cursor, requester, requester]
+        if workspaces:
+            where += f" and ws in ({', '.join('?' for _ in workspaces)})"
+            args += list(workspaces)
+        ids = [r["pk"] for r in self.db.query(f"select pk from sync_changes where {where}", args)]
         self.mark_synced(ids)
+        self.set_state(key, str(cursor))
         return len(ids)
 
     def mark_synced(self, action_ids: list[str]) -> None:
@@ -449,8 +467,8 @@ class HttpPeer:
         self.id, self.epoch, self.last_seq = j["worker_id"], j.get("epoch"), j.get("journal_seq")
         return str(self.id)
 
-    def ack(self, worker: str, cursor: int) -> None:
-        r = self.client.post("/api/v1/sync/ack", json={"worker": worker, "cursor": cursor})
+    def ack(self, worker: str, cursor: int, workspaces: list[str] | None = None) -> None:
+        r = self.client.post("/api/v1/sync/ack", json={"worker": worker, "cursor": cursor, "workspaces": workspaces})
         if r.status_code != 404:  # an older hub without /sync/ack
             r.raise_for_status()
 
@@ -486,8 +504,9 @@ class PostgresHub:
         self.last_seq = self.journal.last_seq()
         return self.id
 
-    def ack(self, worker: str, cursor: int) -> None:
-        self.journal.ack(worker, cursor)
+    def ack(self, worker: str, cursor: int, workspaces: list[str] | None = None) -> None:
+        # behind the re-read window a lower seq may still commit: acknowledge only what is surely settled
+        self.journal.ack(worker, max(0, cursor - self.WINDOW), workspaces)
 
     def close(self) -> None:
         self.journal.db.close()
@@ -588,11 +607,12 @@ class SyncEngine:
                         if top > cur:  # only rows that came from the peer (or other workspaces) are left
                             self.journal.set_state(f"push:{peer.id}", str(top))
                         break
-                    peer.push(self.journal.worker_id, batch)
+                    got = peer.push(self.journal.worker_id, batch) or {}
+                    refused = {k["pk"] for k in got.get("rejected_keys", []) if k.get("tbl") == "action_log"}
                     cur = batch[-1].seq
-                    with self.journal.db.tx():  # cursor and synced_at move together
+                    with self.journal.db.tx():  # cursor and synced_at move together; rows the hub set aside stay unsynced
                         self.journal.set_state(f"push:{peer.id}", str(cur))
-                        self.journal.mark_synced([c.pk for c in batch if c.tbl == "action_log" and c.op == "U"])
+                        self.journal.mark_synced([c.pk for c in batch if c.tbl == "action_log" and c.op == "U" and c.pk not in refused])
                     pushed += len(batch)
                 # pull
                 cur = self._cursor("pull")
@@ -607,7 +627,7 @@ class SyncEngine:
                     self.journal.set_state(f"pull:{peer.id}", str(cur))
                     if not res.get("more"):
                         break
-                peer.ack(self.journal.worker_id, cur)  # the hub marks what this worker now has
+                peer.ack(self.journal.worker_id, cur, self.workspaces)  # the hub marks what this worker now has
                 self.stats.last_error = None
                 self.failures = 0
                 self.journal.set_state("last_error", None)
