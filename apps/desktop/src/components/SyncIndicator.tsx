@@ -3,11 +3,12 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Corner status: local store health, live stream, multi-worker sync (Phase 5) and "Pair a phone".
 import { ArrowDownUp, Database, Loader2, RefreshCw, Smartphone } from 'lucide-react'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { api, config } from '../lib/api'
 import { useApp } from '../lib/store'
 import { cls, fmtBytes } from '../lib/ui'
-import { PairPhone } from './PairPhone'
+
+const PairPhone = lazy(() => import('./PairPhone').then((m) => ({ default: m.PairPhone })))  // with its QR library
 
 const ago = (iso: string | null | undefined) => {
   if (!iso) return 'never'
@@ -105,7 +106,7 @@ export function SyncIndicator() {
         <span>{label}</span>
         {sync && <span className="text-slate-500">· {pending} {peer?.target ? 'to sync' : 'pending'}</span>}
       </button>
-      {pairing && <PairPhone onClose={() => setPairing(false)} />}
+      {pairing && <Suspense fallback={null}><PairPhone onClose={() => setPairing(false)} /></Suspense>}
     </div>
   )
 }

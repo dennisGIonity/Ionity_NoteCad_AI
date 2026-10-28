@@ -1,15 +1,17 @@
 // Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Inspector } from './components/Inspector'
-import { MindMap } from './components/MindMap'
 import { RecorderHUD } from './components/RecorderHUD'
 import { SyncIndicator } from './components/SyncIndicator'
 import { useRecorder } from './lib/recorder'
 import { useApp } from './lib/store'
 import { fitWindow, inTauri, onHotkey } from './lib/tauri'
 import { cls } from './lib/ui'
+
+// the map (React Flow, layout) loads when it is first opened, not with the recorder
+const MindMap = lazy(() => import('./components/MindMap').then((m) => ({ default: m.MindMap })))
 
 const typingIn = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
@@ -79,7 +81,7 @@ export default function App() {
         className={cls('absolute inset-0 transition-all duration-500 ease-[cubic-bezier(.2,.8,.2,1)]',
           isMap ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.96] opacity-0')}
       >
-        {isMap && <MindMap />}
+        {isMap && <Suspense fallback={null}><MindMap /></Suspense>}
         <Inspector />
       </main>
       {!isMap && !inTauri && (
