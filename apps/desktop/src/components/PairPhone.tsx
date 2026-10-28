@@ -31,9 +31,9 @@ export function PairPhone({ onClose }: { onClose: () => void }) {
   }, [link])
 
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); onClose() } }
+    window.addEventListener('keydown', k, true)  // capture: before the app's own Escape (deselect)
+    return () => window.removeEventListener('keydown', k, true)
   }, [onClose])
 
   const copy = async () => {

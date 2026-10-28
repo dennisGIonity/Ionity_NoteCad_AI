@@ -26,7 +26,7 @@ export default function App() {
   // hold Space to talk; Esc cancels; M toggles the map
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (typingIn(e.target)) return
+      if (typingIn(e.target) || e.defaultPrevented) return
       const rec = useRecorder.getState()
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()
@@ -47,15 +47,28 @@ export default function App() {
         void useRecorder.getState().stop()
       }
     }
+    const lost = () => {  // focus moved away while Space was held: keyup will never come
+      const rec = useRecorder.getState()
+      if (rec.state === 'recording' || rec.state === 'arming') void rec.stop()
+    }
+    const hidden = () => { if (document.hidden) lost() }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
+    window.addEventListener('blur', lost)
+    document.addEventListener('visibilitychange', hidden)
     let off = () => undefined as void
     void onHotkey((s) => {
       const rec = useRecorder.getState()
       if (s === 'pressed' && rec.state === 'idle') void rec.start(useApp.getState().selected)
       if (s === 'released') void rec.stop()
     }).then((f) => { off = f })
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); off() }
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', lost)
+      document.removeEventListener('visibilitychange', hidden)
+      off()
+    }
   }, [])
 
   const isMap = view === 'map'

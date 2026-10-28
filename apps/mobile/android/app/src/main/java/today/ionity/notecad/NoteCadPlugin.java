@@ -71,6 +71,7 @@ public class NoteCadPlugin extends Plugin {
             .putString("token", call.getString("token", ""))
             .putString("ws", call.getString("ws", ""))
             .apply();
+        OutboxStore.unpark(getContext());
         UploadWorker.enqueue(getContext());
         call.resolve();
     }

@@ -83,7 +83,7 @@ export function RecorderHUD({ docked = false }: { docked?: boolean }) {
 
   const send = () => {
     if (!text.trim()) return
-    void rec.sendText(text)
+    void rec.sendText(text, useApp.getState().selected)
     setText('')
     setTyping(false)
   }
@@ -102,7 +102,7 @@ export function RecorderHUD({ docked = false }: { docked?: boolean }) {
           type="button"
           aria-label={recording ? 'Stop and send' : 'Record a voice note'}
           title={recording ? 'Release Space or click to send' : 'Click, or hold Space, to talk'}
-          onClick={() => rec.toggle(null)}
+          onClick={() => rec.toggle(useApp.getState().selected)}
           className={cls(
             'relative grid size-11 shrink-0 place-items-center rounded-full transition-all duration-200 focus-visible:outline-2 focus-visible:outline-sky-400',
             recording ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/40' : 'bg-white/10 text-slate-100 hover:bg-white/20',

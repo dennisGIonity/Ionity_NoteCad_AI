@@ -7,12 +7,13 @@ import { Upload } from 'tus-js-client'
 import { create } from 'zustand'
 import type { MindMap } from '../../../desktop/src/lib/types'
 import { Native, type NativeItem } from './native'
-import { outbox, DONE, type ItemState, type OutboxItem } from './outbox'
+import { outbox, DONE, WAITING, type ItemState, type OutboxItem } from './outbox'
 import { loadPairing, savePairing, uuid7, type Pairing } from './pairing'
 
 export type Live = 'off' | 'connecting' | 'live' | 'reconnecting'
 export type RecState = 'idle' | 'arming' | 'recording'
 const RETRY = [2000, 5000, 15000, 30000, 60000, 120000]
+const FOLLOW: ItemState[] = ['uploaded', 'transcribing', 'routing']
 const MIMES = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm']
 
 interface PhoneState {
@@ -29,6 +30,9 @@ interface PhoneState {
   recStartedAt: number
   level: number
   error: string | null
+  /** A notecad://pair link that arrived: shown for the owner to confirm before the phone talks to that brain. */
+  offer: Pairing | null
+  offerPair(p: Pairing | null): void
   init(): Promise<void>
   pair(p: Pairing): Promise<string | null>
   unpair(): Promise<void>
@@ -78,6 +82,15 @@ let es: EventSource | null = null
 let lastEvent = 0
 let draining = false
 let pollTimer: ReturnType<typeof setInterval> | undefined
+let started = false
+let levelAt = 0
+let progressAt = 0
+
+function resetLive() {
+  es?.close()
+  es = null
+  lastEvent = 0
+}
 
 async function reload(set: (s: Partial<PhoneState>) => void) {
   set({ items: await outbox.all(), native: await Native.listOutbox().catch(() => []) })
@@ -93,12 +106,15 @@ export const usePhone = create<PhoneState>((set, get) => ({
   live: 'off',
   map: null,
   context: null,
+  offer: null,
   rec: 'idle',
   recStartedAt: 0,
   level: 0,
   error: null,
 
   async init() {
+    if (started) return
+    started = true
     await outbox.prune()
     await reload(set)
     window.addEventListener('online', () => { set({ online: true }); void get().drain(); void get().refresh() })
@@ -113,14 +129,21 @@ export const usePhone = create<PhoneState>((set, get) => ({
       if (action === 'record') void get().startRecording()
     }
     clearInterval(pollTimer)
-    pollTimer = setInterval(() => { void get().drain(); void followByPolling(get, set) }, 5000)
+    // cheap when idle: the decision uses the items already in memory, not a read of every recording
+    pollTimer = setInterval(() => {
+      const items = get().items
+      if (items.some((i) => WAITING.includes(i.state) && (!i.nextTryAt || i.nextTryAt <= Date.now()))) void get().drain()
+      if (get().live !== 'live' && items.some((i) => FOLLOW.includes(i.state))) void followByPolling(get, set)
+    }, 5000)
   },
 
   async pair(p) {
     try {
       const w = await call<{ name: string }>(p, `/workspaces/${p.ws}`)
+      resetLive()  // a different brain: its own stream, its own event ids
       await savePairing({ ...p, name: w.name })
-      set({ pairing: { ...p, name: w.name }, error: null })
+      set({ pairing: { ...p, name: w.name }, offer: null, error: null })
+      await outbox.unpark()  // notes parked on a refused token get another go
       await get().refresh()
       void get().drain()
       return null
@@ -130,12 +153,14 @@ export const usePhone = create<PhoneState>((set, get) => ({
   },
 
   async unpair() {
-    es?.close()
+    resetLive()
     await savePairing(null)
     set({ pairing: null, farm: null, map: null, live: 'off', reachable: null })
   },
 
   setContext(c) { set({ context: c }) },
+
+  offerPair(p) { set({ offer: p }) },
 
   async refresh() {
     const p = get().pairing
@@ -173,7 +198,8 @@ export const usePhone = create<PhoneState>((set, get) => ({
         an.getByteTimeDomainData(buf)
         let s = 0
         for (const v of buf) s += Math.abs(v - 128)
-        set({ level: Math.min(1, (s / buf.length / 128) * 6) })
+        const now = performance.now()
+        if (now - levelAt > 66) { levelAt = now; set({ level: Math.min(1, (s / buf.length / 128) * 6) }) }
         raf = requestAnimationFrame(tick)
       }
       tick()
@@ -238,7 +264,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
     if (!p || draining || !navigator.onLine) return
     draining = true
     try {
-      const waiting = (await outbox.all()).filter((i) => ['saved', 'uploading', 'failed'].includes(i.state)
+      const waiting = (await outbox.all()).filter((i) => WAITING.includes(i.state)
         && (!i.nextTryAt || i.nextTryAt <= Date.now())).reverse()
       for (const it of waiting) {
         const ok = await send(p, it, set)
@@ -316,7 +342,11 @@ async function send(p: Pairing, it: OutboxItem, set: (s: Partial<PhoneState>) =>
         recorded_at: it.recordedAt, source: it.source, ...(it.contextNodeId ? { context_node_id: it.contextNodeId } : {}),
       },
       onUploadUrlAvailable: () => { void outbox.patch(it.id, { uploadUrl: up.url ?? undefined }) },
-      onProgress: (sent, total) => { void outbox.patch(it.id, { progress: total ? sent / total : 0 }).then(() => outbox.all().then((items) => set({ items }))) },
+      onProgress: (sent, total) => {  // the screen in memory every chunk, the outbox at most twice a second
+        const progress = total ? sent / total : 0
+        set({ items: usePhone.getState().items.map((x) => (x.id === it.id ? { ...x, progress } : x)) })
+        if (Date.now() - progressAt > 500) { progressAt = Date.now(); void outbox.patch(it.id, { progress }) }
+      },
       onSuccess: async () => {
         await outbox.patch(it.id, { state: 'uploaded', progress: 1, error: undefined, attempts: 0 })
         set({ reachable: true })
@@ -344,7 +374,14 @@ function connectLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneSt
   set({ live: 'connecting' })
   es = new EventSource(u.toString())
   es.onopen = () => set({ live: 'live', reachable: true })
-  es.onerror = () => set({ live: es?.readyState === EventSource.CLOSED ? 'off' : 'reconnecting' })
+  const mine = es
+  es.onerror = () => {
+    if (es !== mine) return
+    if (mine.readyState === EventSource.CLOSED) {  // given up (an HTTP error): the next refresh opens it again
+      es = null
+      set({ live: 'off' })
+    } else set({ live: 'reconnecting' })
+  }
   const on = async (type: string, raw: MessageEvent) => {
     const e = JSON.parse(raw.data)
     lastEvent = Math.max(lastEvent, e.id)
@@ -375,7 +412,7 @@ function connectLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneSt
 async function followByPolling(get: () => PhoneState, set: (s: Partial<PhoneState>) => void) {
   const p = get().pairing
   if (!p || get().live === 'live' || !navigator.onLine) return
-  const pending = (await outbox.all()).filter((i) => ['uploaded', 'transcribing', 'routing'].includes(i.state))
+  const pending = get().items.filter((i) => FOLLOW.includes(i.state))
   for (const it of pending) {
     try {
       const s = await call<{ state: string; text: string | null; error: string | null }>(p, `/captures/${it.id}`)

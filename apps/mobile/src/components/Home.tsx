@@ -10,6 +10,7 @@ import { Native, platform } from '../lib/native'
 import type { NativeItem } from '../lib/native'
 import type { OutboxItem } from '../lib/outbox'
 import { usePhone } from '../lib/phone'
+import { useShallow } from 'zustand/react/shallow'
 
 const STATE: Record<string, { label: string; tone: string }> = {
   saved: { label: 'Saved on phone', tone: 'text-slate-300 bg-white/10' },
@@ -33,7 +34,7 @@ function ago(ms: number) {
 }
 
 function Status() {
-  const { online, reachable, live, farm, pairing, refresh } = usePhone()
+  const { online, reachable, live, farm, pairing, refresh } = usePhone(useShallow((s) => ({ online: s.online, reachable: s.reachable, live: s.live, farm: s.farm, pairing: s.pairing, refresh: s.refresh })))
   const [label, tone, Icon] = !online ? ['No network: notes wait on the phone', 'text-amber-200', CloudOff]
     : reachable === false ? ['Brain not reachable: notes wait on the phone', 'text-amber-200', CloudOff]
     : live === 'live' ? ['Live', 'text-emerald-300', Wifi] : ['Connecting…', 'text-slate-400', Loader2]
@@ -71,7 +72,7 @@ function Menu() {
 }
 
 function ContextPicker() {
-  const { map, context, setContext } = usePhone()
+  const { map, context, setContext } = usePhone(useShallow((s) => ({ map: s.map, context: s.context, setContext: s.setContext })))
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const nodes = useMemo(() => (map?.nodes ?? []).filter((n) => (n.type === 'category' || n.type === 'entity') && !n.virtual
@@ -116,7 +117,7 @@ function ContextPicker() {
 }
 
 function RecordButton() {
-  const { rec, level, recStartedAt, toggleRecording, error } = usePhone()
+  const { rec, level, recStartedAt, toggleRecording, error } = usePhone(useShallow((s) => ({ rec: s.rec, level: s.level, recStartedAt: s.recStartedAt, toggleRecording: s.toggleRecording, error: s.error })))
   const [, tick] = useState(0)
   useEffect(() => {
     if (rec !== 'recording') return
@@ -165,7 +166,7 @@ function TypeNote() {
 }
 
 function Row({ it }: { it: OutboxItem }) {
-  const { retry, discard, undo } = usePhone()
+  const { retry, discard, undo } = usePhone(useShallow((s) => ({ retry: s.retry, discard: s.discard, undo: s.undo })))
   const s = STATE[it.state] ?? STATE.saved
   return (
     <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -204,7 +205,7 @@ function NativeRow({ it }: { it: NativeItem }) {
 }
 
 function Outbox() {
-  const { items, native } = usePhone()
+  const { items, native } = usePhone(useShallow((s) => ({ items: s.items, native: s.native })))
   const waiting = items.filter((i) => ['saved', 'uploading', 'failed'].includes(i.state)).length + native.filter((n) => n.state !== 'uploaded').length
   if (!items.length && !native.length) return null
   return (
@@ -255,8 +256,9 @@ function BubbleCard() {
   useEffect(() => {
     void Native.bubbleRunning().then(setRunning)
     void Native.overlayAllowed().then(setAllowed)
-    const t = setInterval(() => void Native.overlayAllowed().then(setAllowed), 3000)
-    return () => clearInterval(t)
+    const back = () => { if (!document.hidden) void Native.overlayAllowed().then(setAllowed) }
+    document.addEventListener('visibilitychange', back)
+    return () => document.removeEventListener('visibilitychange', back)
   }, [])
   if (platform !== 'android' || !Native.available) return null
   const toggle = async () => {

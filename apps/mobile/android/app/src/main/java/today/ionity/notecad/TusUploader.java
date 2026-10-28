@@ -61,8 +61,9 @@ final class TusUploader {
         if (uploadUrl != null) {
             HttpURLConnection h = open(uploadUrl, "HEAD", token);
             int s = h.getResponseCode();
-            if (s == 200) {
-                offset = Long.parseLong(h.getHeaderField("Upload-Offset"));
+            String known = h.getHeaderField("Upload-Offset");
+            if (s == 200 && known != null && known.matches("\\d+")) {
+                offset = Long.parseLong(known);
                 res.captureId = h.getHeaderField("NoteCad-Capture-Id");
             } else if (s == 401) {
                 throw new Rejected(s, "The phone token was not accepted: pair again");
@@ -81,7 +82,8 @@ final class TusUploader {
             int s = c.getResponseCode();
             if (s != 201) {
                 c.disconnect();
-                throw new Rejected(s, "The brain answered " + s);
+                // 404 here: the workspace is not on that brain (paired to another farm), so retrying cannot help
+                throw new Rejected(s, s == 404 ? "This farm is not on the brain: pair again" : "The brain answered " + s);
             }
             String loc = c.getHeaderField("Location");
             uploadUrl = loc == null ? null : new URL(new URL(endpoint), loc).toString();  // relative or absolute
@@ -109,6 +111,9 @@ final class TusUploader {
                 String o = c.getHeaderField("Upload-Offset");
                 String cid = c.getHeaderField("NoteCad-Capture-Id");
                 c.disconnect();
+                if (s == 404 || s == 410) {
+                    throw new IOException("The upload expired on the brain");  // next try asks again and starts over
+                }
                 if ((s == 204 || s == 409) && o != null) {
                     offset = Long.parseLong(o);  // 409: the brain has more (or less) than we thought; continue from there
                     if (cid != null) res.captureId = cid;

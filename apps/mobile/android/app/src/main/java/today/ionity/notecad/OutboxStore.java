@@ -70,7 +70,8 @@ final class OutboxStore {
         }
     }
 
-    static void update(Context c, String id, String key, Object value) {
+    /** Read, change, write as one step: the bubble and the upload worker update the same item. */
+    static synchronized void update(Context c, String id, String key, Object value) {
         JSONObject o = read(c, id);
         if (o == null) return;
         try {
@@ -90,6 +91,20 @@ final class OutboxStore {
         }
         Collections.sort(out, (a, b) -> Long.compare(a.optLong("createdAt"), b.optLong("createdAt")));
         return out;
+    }
+
+    /** After pairing again, notes parked on a refused token get another go. */
+    static synchronized void unpark(Context c) {
+        for (JSONObject o : all(c)) {
+            if (!o.optBoolean("permanent", false) || !o.optString("error", "").contains("token")) continue;
+            try {
+                o.put("permanent", false);
+                o.put("state", "saved");
+                o.put("error", "");
+            } catch (JSONException ignored) {
+            }
+            write(c, o);
+        }
     }
 
     static void forget(Context c, String id) {

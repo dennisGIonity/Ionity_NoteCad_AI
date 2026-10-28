@@ -10,10 +10,10 @@ export type View = 'hud' | 'map'
 export type Layout = 'tree' | 'radial'
 export type LiveState = 'connecting' | 'live' | 'reconnecting' | 'off'
 
-const EVENT_TYPES = ['capture.queued', 'stt.transcribing', 'stt.completed', 'router.resolving', 'action.applied',
+export const EVENT_TYPES = ['capture.queued', 'stt.transcribing', 'stt.completed', 'router.resolving', 'action.applied',
   'inbox.created', 'capture.completed', 'capture.failed', 'action.undone', 'node.updated', 'task.updated',
-  'alert.updated', 'inbox.resolved']
-const REFRESHING = new Set(['action.applied', 'action.undone', 'node.updated', 'inbox.resolved', 'task.updated', 'alert.updated', 'capture.completed', 'sync.applied'])
+  'alert.updated', 'inbox.resolved', 'sync.applied']
+export const REFRESHING = new Set(['action.applied', 'action.undone', 'node.updated', 'inbox.resolved', 'task.updated', 'alert.updated', 'capture.completed', 'sync.applied'])
 const HIGHLIGHT_MS = 6000
 
 interface AppState {
@@ -50,6 +50,30 @@ interface AppState {
 let source: EventSource | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let syncTimer: ReturnType<typeof setInterval> | undefined
+let reopenTimer: ReturnType<typeof setTimeout> | undefined
+let reopenTries = 0
+
+/** The live stream. EventSource retries by itself after a drop, but gives up for good on an HTTP error (a 401 after a
+ * token change, the brain restarting behind a proxy): then it is opened again here, backing off to 30 s. */
+function openStream(ws: string, cursor: number, get: () => AppState, set: (p: Partial<AppState>) => void) {
+  clearTimeout(reopenTimer)
+  source?.close()
+  const es = new EventSource(api.eventsUrl(ws, cursor))
+  source = es
+  es.onopen = () => { reopenTries = 0; set({ live: 'live' }) }
+  es.onerror = () => {
+    if (source !== es) return
+    if (es.readyState !== EventSource.CLOSED) { set({ live: 'reconnecting' }); return }
+    set({ live: 'reconnecting' })
+    const wait = Math.min(30000, 1000 * 2 ** reopenTries++)
+    reopenTimer = setTimeout(() => { if (get().ws === ws && source === es) openStream(ws, get().lastEventId, get, set) }, wait)
+  }
+  for (const t of EVENT_TYPES) {
+    es.addEventListener(t, (ev) => {
+      try { get().onEvent(JSON.parse((ev as MessageEvent).data)) } catch { /* bad frame */ }
+    })
+  }
+}
 
 export const useApp = create<AppState>((set, get) => ({
   view: (new URLSearchParams(location.search).get('view') as View) || 'hud',
@@ -89,19 +113,15 @@ export const useApp = create<AppState>((set, get) => ({
 
   async switchWorkspace(ws) {
     config.save({ workspace: ws })
+    clearTimeout(reopenTimer)
     source?.close()
+    source = null
     set({ ws, map: null, captures: {}, activeCapture: null, selected: null, highlights: {} })
     await get().refreshMap()
+    if (get().ws !== ws) return  // another switch happened while the map loaded
     const cursor = get().map?.cursor ?? 0
     set({ lastEventId: cursor, live: 'connecting' })
-    source = new EventSource(api.eventsUrl(ws, cursor))
-    source.onopen = () => set({ live: 'live' })
-    source.onerror = () => set({ live: source?.readyState === EventSource.CLOSED ? 'off' : 'reconnecting' })
-    for (const t of EVENT_TYPES) {
-      source.addEventListener(t, (ev) => {
-        try { get().onEvent(JSON.parse((ev as MessageEvent).data)) } catch { /* bad frame */ }
-      })
-    }
+    openStream(ws, cursor, get, set)
     await get().refreshSync()
     clearInterval(syncTimer)
     syncTimer = setInterval(() => get().refreshSync(), 10000)

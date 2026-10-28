@@ -64,14 +64,20 @@ export function ActionToast() {
     setErr(null)
     try {
       await api.resolveInbox(inboxId, nodeId)
-      useApp.setState((st) => ({ captures: { ...st.captures, [cap.id]: { ...cap, inbox: cap.inbox.map((i) => (i.inbox_id === inboxId ? { ...i, resolved: nodeId } : i)) } } }))
+      useApp.setState((st) => {
+        const cur = st.captures[cap.id] ?? cap
+        return { captures: { ...st.captures, [cap.id]: { ...cur, inbox: cur.inbox.map((i) => (i.inbox_id === inboxId ? { ...i, resolved: nodeId } : i)) } } }
+      })
     } catch (e) { setErr((e as Error).message) }
     setBusy(null)
   }
   const skip = async (inboxId: string) => {
     setBusy(inboxId)
     try { await api.dismissInbox(inboxId) } catch { /* the item stays in the Inbox */ }
-    useApp.setState((st) => ({ captures: { ...st.captures, [cap.id]: { ...cap, inbox: cap.inbox.map((i) => (i.inbox_id === inboxId ? { ...i, dismissed: true } : i)) } } }))
+    useApp.setState((st) => {
+      const cur = st.captures[cap.id] ?? cap
+      return { captures: { ...st.captures, [cap.id]: { ...cur, inbox: cur.inbox.map((i) => (i.inbox_id === inboxId ? { ...i, dismissed: true } : i)) } } }
+    })
     setBusy(null)
   }
   const open = (id: string) => { setView('map'); select(id) }

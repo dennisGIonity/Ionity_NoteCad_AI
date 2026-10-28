@@ -79,7 +79,7 @@ public class UploadWorker extends Worker {
             } catch (TusUploader.Rejected e) {
                 OutboxStore.update(c, id, "state", "failed");
                 OutboxStore.update(c, id, "error", e.getMessage());
-                if (e.status == 401 || e.status == 413 || e.status == 400) OutboxStore.update(c, id, "permanent", true);
+                if (e.status == 401 || e.status == 413 || e.status == 400 || e.status == 404) OutboxStore.update(c, id, "permanent", true);
                 else retry = true;
             } catch (Exception e) {
                 OutboxStore.update(c, id, "state", "failed");
