@@ -504,14 +504,19 @@ class Brain:
                                  assignee=assignee_from_text(ev), place_id=None, new_item=None, confidence=1.0)["actions"]
         res = self.applier.apply(ws, item["capture_id"], item["event_idx"], acts, "user:inbox")
         with self.db.tx():
-            self.db.update("inbox", {"id": item_id}, {"state": "resolved", "resolved_at": now_iso(),
-                                                      "resolution": {"node_id": node_id, "result": res.get("status")}})
-            self.db.insert("route_corrections", {"id": new_id(), "workspace_id": ws, "phrase": item["event_text"] or "",
+            # what placing it taught the brain is kept with the item, so Undo of the note takes the lesson back too
+            correction = new_id()
+            self.db.insert("route_corrections", {"id": correction, "workspace_id": ws, "phrase": item["event_text"] or "",
                                                  "node_id": node_id, "created_at": now_iso()})
+            learned = None
             if learn_alias and item["event_text"]:
                 phrase = self._alias_phrase(item["event_text"], node)
                 if phrase:
                     self.graph.add_alias(node_id, phrase, weight=0.5)
+                    learned = {"node_id": node_id, "alias": phrase.strip().lower(), "weight": 0.5}
+            self.db.update("inbox", {"id": item_id}, {"state": "resolved", "resolved_at": now_iso(),
+                                                      "resolution": {"node_id": node_id, "result": res.get("status"),
+                                                                     "correction_id": correction, "learned_alias": learned}})
             if item["capture_id"] and item["event_idx"] is not None:
                 self.db.update("capture_events", {"capture_id": item["capture_id"], "idx": item["event_idx"]},
                                {"state": "applied"})
@@ -556,6 +561,17 @@ class Brain:
             if (loads(r["action"], {}) or {}).get("type") == "create_node"]
         n = self.applier.undo(cap["workspace_id"], cid)
         with self.db.tx():
+            # an Inbox answer for this note also taught the brain a phrase: forget it with the note
+            for item in self.db.query("select resolution from inbox where capture_id=? and state='resolved'", (cid,)):
+                r = loads(item["resolution"], {}) or {}
+                if r.get("correction_id"):
+                    self.db.execute("delete from route_corrections where id=?", (r["correction_id"],))
+                la = r.get("learned_alias")
+                if la:
+                    self.db.execute("update node_aliases set weight=weight-? where node_id=? and alias=?",
+                                    (la["weight"], la["node_id"], la["alias"]))
+                    self.db.execute("delete from node_aliases where node_id=? and alias=? and weight<=0.0001",
+                                    (la["node_id"], la["alias"]))
             self.db.execute("update inbox set state='dismissed' where capture_id=? and state='open'", (cid,))
             self.db.execute("update capture_events set state='undone' where capture_id=?", (cid,))
             self.db.update("captures", {"id": cid}, {"state": "undone", "updated_at": now_iso()})

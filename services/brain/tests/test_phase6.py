@@ -398,3 +398,34 @@ def test_rollup_writes_only_what_changed(farm):
     b.db.update = lambda t, k, f: writes.append((t, k)) or real(t, k, f)
     b.graph.rollup([ids["pump"]])
     assert writes == []
+
+
+# ---------------------------------------------------------------- undo forgets what an Inbox answer taught
+def test_undo_forgets_the_phrase_an_inbox_answer_taught(farm):
+    """The desktop's end-to-end test placed 'Sort out the stuff' from the Inbox and undid the note; the learned
+    alias stayed, so the next 'Sort out the stuff' was filed there without asking."""
+    b, ids = farm
+    cid = b.register_capture(ids["ws"], text="Sort out the stuff by the shed", enqueue=False)["capture_id"]
+    b.process(cid)
+    item = b.db.one("select id from inbox where capture_id=? and state='open'", (cid,))
+    assert item, "a vague note goes to the Inbox"
+    b.resolve_inbox(item["id"], ids["pump"])
+    learned = {a for a in b.graph.aliases(ids["pump"])} - {"main pump", "die groot pomp", "hoofpomp", "borehole pump"}
+    assert learned and b.db.one("select count(*) as c from route_corrections")["c"] == 1
+    b.undo(cid)
+    assert set(b.graph.aliases(ids["pump"])) & learned == set()
+    assert b.db.one("select count(*) as c from route_corrections")["c"] == 0
+    again = b.register_capture(ids["ws"], text="Sort out the stuff by the shed", enqueue=False)["capture_id"]
+    assert b.process(again)["state"] == "needs_review"
+
+
+def test_undo_keeps_an_alias_the_owner_already_had(farm):
+    b, ids = farm
+    b.graph.add_alias(ids["pump"], "the stuff", weight=1.0)
+    cid = b.register_capture(ids["ws"], text="Sort out the stuff by the shed", enqueue=False)["capture_id"]
+    b.process(cid)
+    item = b.db.one("select id from inbox where capture_id=? and state='open'", (cid,))
+    if item:
+        b.resolve_inbox(item["id"], ids["pump"])
+    b.undo(cid)
+    assert "the stuff" in b.graph.aliases(ids["pump"])
