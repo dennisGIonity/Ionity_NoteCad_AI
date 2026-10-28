@@ -10,7 +10,7 @@ import pytest
 
 from farm import make_brain, seed_farm
 from notecad_brain import text
-from notecad_brain.routers import RouterChain, RulesRouter
+from notecad_brain.routers import RouterChain
 from notecad_brain.validate import check
 
 MON_0800 = "2026-10-19T06:00:00+00:00"  # Monday 08:00 in Johannesburg
@@ -269,7 +269,6 @@ def test_resolve_alert_turns_node_back(farm):
 
 
 def test_decay_info_ring():
-    from notecad_brain.common import now_iso
     b = make_brain()
     ids = seed_farm(b)
     r = b.register_capture(ids["ws"], text="Dipped the ewes in the south paddock", enqueue=False)

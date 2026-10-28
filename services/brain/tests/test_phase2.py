@@ -14,6 +14,7 @@ from farm import make_brain, seed_farm
 from notecad_brain import mindmap
 from notecad_brain.api import create_app
 from notecad_brain.common import parse_iso
+from notecad_brain.graph import GraphError
 from notecad_brain.stt import Transcript
 
 AT = "2026-10-19T06:00:00+00:00"  # Monday 08:00 SAST
@@ -228,7 +229,7 @@ def test_anchor_routes_unnamed_note_to_open_node_but_named_thing_wins(farm):
     problem = _capture(b, ws, "Hydraulic oil is leaking badly.", context_node_id=ids["tractors"])
     assert b.db.one("select node_id from alerts where capture_id=?", (problem["capture_id"],))["node_id"] == ids["tractor_maint"]
 
-    with pytest.raises(Exception):
+    with pytest.raises(GraphError, match="context_node_id"):
         b.register_capture(ws, text="x", context_node_id="not-a-node")
 
 

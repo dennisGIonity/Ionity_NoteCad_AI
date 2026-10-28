@@ -5,10 +5,15 @@
 from __future__ import annotations
 
 import os
+from typing import overload
 from pathlib import Path
 from dataclasses import dataclass, field
 
 
+@overload
+def _env(name: str, default: str) -> str: ...
+@overload
+def _env(name: str, default: None = None) -> str | None: ...
 def _env(name: str, default: str | None = None) -> str | None:
     return os.environ.get(f"NC_BRAIN_{name}", default)
 

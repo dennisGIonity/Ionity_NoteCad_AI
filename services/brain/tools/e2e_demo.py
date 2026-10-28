@@ -1,4 +1,4 @@
-import json, sys, time, httpx
+import sys, time, httpx
 WS = sys.argv[1] if len(sys.argv) > 1 else "demo-farm-4"
 B, C = "http://127.0.0.1:8788", "http://127.0.0.1:8787"
 c = httpx.Client(timeout=180)

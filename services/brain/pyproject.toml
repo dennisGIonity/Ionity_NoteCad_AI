@@ -24,3 +24,23 @@ notecad_brain = ["actions.schema.json"]
 [tool.pytest.ini_options]
 markers = ["live: needs a running local model (Ollama) or Postgres"]
 addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+# bugs, not style: pyflakes, syntax errors, bugbear, pylint errors. B008: FastAPI Depends() defaults.
+select = ["F", "E9", "B", "PLE"]
+ignore = ["B008", "B904", "B905"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+# db.one() is Optional; on aggregates (count, max) and rows just written it cannot be None. Reported, not failed.
+reportOptionalSubscript = "warning"
+reportOptionalMemberAccess = "warning"
+pythonVersion = "3.11"
+extraPaths = ["../companion"]
+include = ["notecad_brain"]

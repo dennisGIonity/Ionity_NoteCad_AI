@@ -4,6 +4,7 @@
 """The companion: one owner, one store, one small model. Chat, learn, remember, route offline."""
 from __future__ import annotations
 
+import threading
 import random
 import re
 import time
@@ -43,6 +44,7 @@ class Companion:
         """open_work: optional callable returning short lines about the owner's open tasks and alerts
         (the brain's digest), so "what do I still need to do?" is answered from the real list."""
         self.open_work = open_work
+        self.lock = threading.RLock()  # one request at a time on this owner's store (api.Registry.using)
         self.store = store
         self.llm = llm
         self.embedder = embedder or HashEmbedder()

@@ -4,6 +4,8 @@
 """The workspace graph: one tree of nodes (folders) plus cross-links (mind map), and the status roll-up."""
 from __future__ import annotations
 
+from typing import overload
+
 from datetime import timedelta
 
 import numpy as np
@@ -41,7 +43,7 @@ class Graph:
         r = self.db.one("select * from nodes where workspace_id=? and parent_id is null", (ws,))
         if r is None:
             raise GraphError("workspace has no root")
-        return self._row(r)
+        return self._row(dict(r))
 
     def add_member(self, ws: str, display_name: str, *, role: str = "editor", contact: str | None = None,
                    user_id: str | None = None, person_node_id: str | None = None) -> str:
@@ -85,6 +87,10 @@ class Graph:
                 self.add_alias(nid, a)
         return nid
 
+    @overload
+    def _row(self, r: dict) -> dict: ...
+    @overload
+    def _row(self, r: None) -> None: ...
     def _row(self, r: dict | None) -> dict | None:
         if r is None:
             return None
@@ -241,7 +247,10 @@ class Graph:
         changed = []
         for n in self.db.query("select id, status, status_since, open_alerts from nodes where workspace_id=? "
                                "and status in ('info','done')", (ws,)):
-            age = now_dt - parse_iso(n["status_since"])
+            since = parse_iso(n["status_since"])
+            if since is None:  # a row synced without a time: nothing to fade from
+                continue
+            age = now_dt - since
             if (n["status"] == "info" and age > timedelta(hours=24)) or (n["status"] == "done" and age > timedelta(hours=48)):
                 self.db.update("nodes", {"id": n["id"]}, {"status": "ok", "status_reason": None,
                                                           "status_since": now_iso(now_dt.timestamp())})

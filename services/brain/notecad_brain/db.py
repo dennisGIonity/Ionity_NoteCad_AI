@@ -119,8 +119,8 @@ class Database:
             if path != ":memory:":
                 self._shared.execute("pragma journal_mode=wal")
         else:
-            import psycopg
-            from psycopg.rows import dict_row
+            import psycopg  # pyright: ignore[reportMissingImports]  (optional: pip install .[postgres])
+            from psycopg.rows import dict_row  # pyright: ignore[reportMissingImports]
             self._pg = psycopg.connect(url, autocommit=True, row_factory=dict_row)
         self.migrate()
 

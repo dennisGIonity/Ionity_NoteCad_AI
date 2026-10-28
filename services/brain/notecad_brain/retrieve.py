@@ -12,7 +12,7 @@ from rapidfuzz import fuzz
 
 from .graph import Graph
 
-STOP = {"the", "a", "an", "and", "of", "in", "on", "at", "to", "is", "was", "die", "en", "van", "op", "in", "is", "my",
+STOP = {"the", "a", "an", "and", "of", "in", "on", "at", "to", "is", "was", "die", "en", "van", "op", "my",
         "our", "ons", "just", "net", "it", "its", "this", "that"}
 
 

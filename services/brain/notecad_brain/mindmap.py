@@ -132,14 +132,16 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
     # ------------------------------------------------------------ per visible node: own items
     own_tasks: dict[str, list] = {}
     for t in open_tasks:
-        own_tasks.setdefault(visible(t["node_id"]), []).append(t)
+        if (v := visible(t["node_id"])) is not None:
+            own_tasks.setdefault(v, []).append(t)
     own_alerts: dict[str, list] = {}
     for a in alerts:
-        own_alerts.setdefault(visible(a["node_id"]), []).append(a)
+        if (v := visible(a["node_id"])) is not None:
+            own_alerts.setdefault(v, []).append(a)
     own_notes: dict[str, list] = {}
     for n in notes:
         v = visible(n["node_id"])
-        if len(own_notes.setdefault(v, [])) < notes_per_node:
+        if v is not None and len(own_notes.setdefault(v, [])) < notes_per_node:
             own_notes[v].append(n)
 
     # ------------------------------------------------------------ nodes

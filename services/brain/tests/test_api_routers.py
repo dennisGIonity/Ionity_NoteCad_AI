@@ -7,6 +7,7 @@ import threading
 import json
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from farm import make_brain, seed_farm
@@ -103,11 +104,8 @@ def test_stt_chain_falls_back_and_prefers_whisper_for_afrikaans():
     calls.clear()
     chain.transcribe(b"", mime="audio/ogg", lang_hint="af-ZA", keyterms=[])
     assert calls[0] == "faster-whisper"
-    try:
+    with pytest.raises(STTError):
         ChainSTT([E("a", "", 0, True)]).transcribe(b"", mime="", lang_hint=None, keyterms=[])
-        assert False
-    except STTError:
-        pass
 
 
 def test_deepgram_request_carries_keyterms():

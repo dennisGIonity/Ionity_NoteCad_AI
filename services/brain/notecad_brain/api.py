@@ -244,8 +244,8 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
     @r.get("/v1/workspaces/{ws}", dependencies=A)
     def get_ws(ws: str):
-        ws_ok(ws)
-        return {**brain.graph.workspace(ws), "root_id": brain.graph.root(ws)["id"], "members": brain.graph.members(ws)}
+        row = brain.graph.workspace(ws_ok(ws)) or {}
+        return {**row, "root_id": brain.graph.root(ws)["id"], "members": brain.graph.members(ws)}
 
     @r.post("/v1/workspaces/{ws}/onboard", dependencies=A)
     def onboard(ws: str, body: OnboardIn):
@@ -397,7 +397,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
             form = await request.form()
             request.state.form = form  # closed below: its temp files are released at once
             for key, val in form.multi_items():
-                if hasattr(val, "read"):  # an uploaded file
+                if not isinstance(val, str):  # an uploaded file
                     if key in ("file", "audio") and audio is None:
                         audio = await val.read()
                         mime = (val.content_type or "").split(";")[0].strip().lower()
@@ -588,9 +588,10 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         except OSError:
             pass
         try:
-            for fam, *_, addr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-                if addr[0] not in ips and not addr[0].startswith("127."):
-                    ips.append(addr[0])
+            for *_, addr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+                ip = str(addr[0])
+                if ip not in ips and not ip.startswith("127."):
+                    ips.append(ip)
         except OSError:
             pass
         lan = settings.bind_host not in ("127.0.0.1", "localhost", "::1")

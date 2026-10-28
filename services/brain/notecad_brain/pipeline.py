@@ -56,7 +56,7 @@ class CompanionLink:
         self._transport = transport
 
     def _client(self):
-        return httpx.Client(base_url=self.base_url, timeout=self._timeout, transport=self._transport)
+        return httpx.Client(base_url=self.base_url or "", timeout=self._timeout, transport=self._transport)
 
     def observe(self, owner: str, body: str, node_path: str | None) -> None:
         if not self.base_url:
@@ -464,7 +464,7 @@ class Brain:
             raise KeyError(item_id)
         ws = item["workspace_id"]
         node = self.graph.node(node_id) if node_id else None
-        if node is None or node["workspace_id"] != ws:
+        if node_id is None or node is None or node["workspace_id"] != ws:
             raise GraphError("choose a node from this workspace")
         proposal = loads(item["proposal"], {}) or {}
         acts = [a for a in proposal.get("actions", []) if a.get("type") != "ask_user"]
@@ -480,7 +480,7 @@ class Brain:
             cap = self.db.one("select recorded_at from captures where id=?", (item["capture_id"],)) if item["capture_id"] else None
             ctx = RouteContext(capture_id=item["capture_id"] or "", event_index=item["event_idx"] or 0,
                                event=item["event_text"] or "", transcript=item["event_text"] or "",
-                               captured_at=parse_iso(cap["recorded_at"]) if cap else datetime.now(timezone.utc),
+                               captured_at=(parse_iso(cap["recorded_at"]) if cap else None) or datetime.now(timezone.utc),
                                lang=None, candidates=[{"node_id": node_id, "path": self.graph.path_titles(node_id),
                                                        "kind": node["kind"], "score": 1.0, "parent_id": node["parent_id"]}],
                                spine=[], timezone=self.settings.timezone)
@@ -581,7 +581,7 @@ class Brain:
         self.broker.publish(t["workspace_id"], "task.updated", {"task_id": task_id, "node_id": t["node_id"], **fields})
         for nid in self._with_ancestors([t["node_id"]]):
             self._node_event(t["workspace_id"], nid)
-        return self.db.one("select * from tasks where id=?", (task_id,))
+        return self.db.one("select * from tasks where id=?", (task_id,)) or {}
 
     def set_attributes(self, node_id: str, changes: dict) -> dict:
         """The owner edits a node's numbers on the map (area, planted, progress); the map and the companion follow."""
@@ -619,7 +619,7 @@ class Brain:
         for n in self.graph.nodes(ws):
             if n["kind"] not in ("root", "channel"):
                 terms.append(n["title"])
-        for nid, al in self.graph.all_aliases(ws).items():
+        for al in self.graph.all_aliases(ws).values():
             terms += [a for a, _ in sorted(al, key=lambda x: -x[1])]
         terms += self.companion.keyterms(ws)
         seen, out = set(), []

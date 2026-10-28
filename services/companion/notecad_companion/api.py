@@ -103,7 +103,6 @@ class Registry:
                     llm_fact_extraction=self.settings.llm_fact_extraction,
                     open_work=brain_digest(self.settings.brain_url, owner_id, token=self.settings.brain_token)
                     if self.settings.brain_url else None)
-                self._owners[owner_id].lock = threading.RLock()
             return self._owners[owner_id]
 
     def drop(self, owner_id: str) -> None:

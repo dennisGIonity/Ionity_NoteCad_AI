@@ -253,7 +253,6 @@ LOC_PREP = r"(?:near|at|in|by|next to|beside|behind|inside|outside|naby|langs|by
 
 def split_location(event: str, cands: list[dict]) -> tuple[str, dict | None]:
     """'..ewes in the south paddock broke..' -> main text without the place, and the place candidate."""
-    from .retrieve import _fuzzy
     best, best_s, span = None, 0.0, None
     for c in cands:
         names = [c["title"]] + list(c.get("aliases") or [])

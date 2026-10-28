@@ -118,10 +118,11 @@ def _owned(clause: str) -> list[tuple[str, Any]]:
     return [(f"owns.{_slug(m.group(2))}", _num(m.group(1))) for m in OWNED_PAIR.finditer(clause)]
 
 
-def _num(s: str) -> float | int:
-    s = s.replace(" ", "").replace(",", "")
+def _num(s: str) -> float | int | str:
+    """"300" -> 300, "1,5" -> 15 (thousands); text that is not one number ("1.2.3") stays text, not a count."""
+    t = s.replace(" ", "").replace(",", "")
     try:
-        f = float(s)
+        f = float(t)
         return int(f) if f.is_integer() else f
     except ValueError:
         return s

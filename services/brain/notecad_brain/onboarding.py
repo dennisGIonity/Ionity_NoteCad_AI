@@ -69,7 +69,7 @@ PROMPT = ("You set up a personal NoteCad map from the owner's own description of
 def pick_pack(answer: str) -> str:
     a = answer.lower()
     scores = {name: len(re.findall(pat, a)) for name, pat in PACK_WORDS}
-    best = max(scores, key=scores.get)
+    best = max(scores, key=lambda k: scores[k])
     return best if scores[best] else "office"
 
 

@@ -53,7 +53,7 @@ def strip_thinking(text: str) -> str:
 class LlamaCppLLM:
     def __init__(self, model_path: str, *, lora_path: str | None = None, n_ctx: int = 4096,
                  n_threads: int | None = None, chat_format: str | None = None):
-        from llama_cpp import Llama
+        from llama_cpp import Llama  # pyright: ignore[reportMissingImports]  (optional extra [local])
 
         kwargs = dict(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads, verbose=False)
         if lora_path:

@@ -3,7 +3,6 @@
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Phase 5: resumable phone uploads (tus 1.0.0), LAN token rules and phone pairing."""
 import base64
-import json
 import time
 
 from fastapi.testclient import TestClient

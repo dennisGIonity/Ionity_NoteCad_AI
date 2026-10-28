@@ -156,7 +156,7 @@ def install(db: Database) -> None:
                 cols = [r[1] for r in c.execute(f"pragma table_info({t})").fetchall()]
                 watched = [x for x in cols if x not in IGNORED_COLUMNS.get(t, set())]
                 guard = "(select value from sync_state where key='applying') is null"
-                key = lambda ref: " || char(31) || ".join(f"cast({ref}.{k} as text)" for k in pk)  # noqa: E731
+                key = lambda ref: " || char(31) || ".join(f"cast({ref}.{k} as text)" for k in pk)  # noqa: E731, B023 - used at once, inside this loop
                 obj = "json_object(" + ", ".join(f"'{x}', NEW.{x}" for x in cols) + ")"
                 ins = (f"insert into sync_changes(tbl, pk, op, row, ws, origin, ts) values ('{t}', {{key}}, '{{op}}', "
                        f"{{row}}, {{ws}}, coalesce((select value from sync_state where key='worker_id'), 'local'), "
@@ -398,7 +398,7 @@ class Journal:
                 self.db.execute("delete from edges where id=?", (other["id"],))
         cols = [c for c in self._columns(ch.tbl) if c in (ch.row or {})]
         if ch.tbl == "action_log":  # it has reached another worker, so it is synced wherever it lands
-            ch.row = {**ch.row, "synced_at": ch.row.get("synced_at") or now_iso()}
+            ch.row = {**(ch.row or {}), "synced_at": (ch.row or {}).get("synced_at") or now_iso()}
             if "synced_at" not in cols and "synced_at" in self._columns("action_log"):
                 cols.append("synced_at")
         vals = [ch.row[c] if not isinstance(ch.row[c], (dict, list)) else json.dumps(ch.row[c]) for c in cols]
@@ -447,7 +447,7 @@ class HttpPeer:
         r.raise_for_status()
         j = r.json()
         self.id, self.epoch, self.last_seq = j["worker_id"], j.get("epoch"), j.get("journal_seq")
-        return self.id
+        return str(self.id)
 
     def ack(self, worker: str, cursor: int) -> None:
         r = self.client.post("/api/v1/sync/ack", json={"worker": worker, "cursor": cursor})
@@ -537,7 +537,7 @@ class SyncEngine:
 
     def _peer(self):
         if self.peer is None:
-            self.peer = make_peer(self.target, self.token, self.transport)
+            self.peer = make_peer(self.target or "", self.token, self.transport)
             self.peer.hello()
             self._check_epoch(self.peer)
         return self.peer

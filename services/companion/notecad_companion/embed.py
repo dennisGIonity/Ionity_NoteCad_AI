@@ -71,7 +71,7 @@ class LlamaEmbedder:
     name = "embeddinggemma-300m"
 
     def __init__(self, model_path: str, dims: int = 256, n_threads: int | None = None):
-        from llama_cpp import Llama  # imported lazily so the package works without llama.cpp
+        from llama_cpp import Llama  # pyright: ignore[reportMissingImports]  (lazy: optional extra [local])
 
         self._llm = Llama(
             model_path=model_path, embedding=True, n_ctx=2048, n_threads=n_threads, verbose=False

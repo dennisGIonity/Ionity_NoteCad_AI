@@ -52,7 +52,7 @@ class DeepgramSTT:
     def transcribe(self, audio, *, mime, lang_hint, keyterms):
         if not self.key:
             raise STTError("no Deepgram key")
-        params: list[tuple[str, str]] = [("model", self.model), ("smart_format", "true"), ("punctuate", "true")]
+        params: list[tuple[str, str | int | float | bool | None]] = [("model", self.model), ("smart_format", "true"), ("punctuate", "true")]
         lang = (lang_hint or "").split("-")[0]
         params.append(("language", lang) if lang and lang != "af" else ("detect_language", "true"))
         for k in keyterms[:100]:
