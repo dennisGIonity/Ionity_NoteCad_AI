@@ -16,6 +16,7 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     chunkSizeWarningLimit: 900,
-    rollupOptions: { output: { manualChunks: { flow: ['@xyflow/react', '@dagrejs/dagre'] } } },
+    // Vite 8 (Rolldown): manualChunks is a function; module ids use forward slashes on Windows too
+    rollupOptions: { output: { manualChunks: (id: string) => (/\/node_modules\/(@xyflow|@dagrejs)\//.test(id) ? 'flow' : undefined) } },
   },
 })
