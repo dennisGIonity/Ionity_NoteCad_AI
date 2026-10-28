@@ -367,3 +367,34 @@ def test_vectors_are_reused_until_a_node_changes(farm):
     b.graph.rename(ids["pump"], "Main Borehole Pump")
     top = b.retriever.candidates(ids["ws"], "main borehole pump")
     assert len(calls) == 1 and top[0]["node_id"] == ids["pump"]  # only the renamed node
+
+
+# ---------------------------------------------------------------- Stage 2: numbered migrations, indexes, pragmas
+def test_numbered_migrations_run_once_and_match_supabase(tmp_path):
+    from pathlib import Path
+    from notecad_brain.db import MIGRATIONS, Database
+    url = f"sqlite:///{tmp_path / 'm.db'}"
+    db = Database(url)
+    assert [r["version"] for r in db.query("select version from schema_migrations")] == [v for v, _, _ in MIGRATIONS]
+    db.close()
+    db = Database(url)  # a second start applies nothing again
+    assert db.one("select count(*) as c from schema_migrations")["c"] == len(MIGRATIONS)
+    plan = db.query("explain query plan select count(*) from tasks where node_id=? and state='open'", ("x",))
+    assert "tasks_node" in str(plan)
+    assert db.one("pragma synchronous")["synchronous"] == 1  # NORMAL under WAL
+    db.close()
+    sql_dir = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+    for version, _, statements in MIGRATIONS:
+        f = next(sql_dir.glob(f"{version:04d}_*.sql"))
+        text = f.read_text(encoding="utf-8")
+        assert all(s in text for s in statements), f.name
+
+
+def test_rollup_writes_only_what_changed(farm):
+    b, ids = farm
+    b.graph.rollup([ids["pump"]])
+    writes = []
+    real = b.db.update
+    b.db.update = lambda t, k, f: writes.append((t, k)) or real(t, k, f)
+    b.graph.rollup([ids["pump"]])
+    assert writes == []

@@ -1,0 +1,66 @@
+{
+  "routers": "local,rules",
+  "embed": "openai",
+  "runs": 2,
+  "notes": {
+    "Wheel needs changing on tractor model John Deere 9550 - number 1": {
+      "p50_s": 2.99,
+      "all_s": [
+        3.26,
+        2.72
+      ]
+    },
+    "Today I planted field south 704 to 708": {
+      "p50_s": 0.1,
+      "all_s": [
+        0.11,
+        0.09
+      ]
+    },
+    "Ask Sipho to check the water pump on the North borehole": {
+      "p50_s": 1.81,
+      "all_s": [
+        1.71,
+        1.91
+      ]
+    }
+  },
+  "stages_last_run": {
+    "route local:openai:notecad-gemma4-e2b": {
+      "calls": 2,
+      "total_s": 3.939,
+      "mean_ms": 1969.3
+    },
+    "retrieve": {
+      "calls": 7,
+      "total_s": 0.754,
+      "mean_ms": 107.7
+    },
+    "embed query": {
+      "calls": 7,
+      "total_s": 0.108,
+      "mean_ms": 15.5
+    },
+    "apply": {
+      "calls": 7,
+      "total_s": 0.008,
+      "mean_ms": 1.1
+    },
+    "rollup": {
+      "calls": 7,
+      "total_s": 0.002,
+      "mean_ms": 0.3
+    },
+    "path_titles": {
+      "calls": 76,
+      "total_s": 0.002,
+      "mean_ms": 0.0
+    },
+    "companion observe": {
+      "calls": 7,
+      "total_s": 0.0,
+      "mean_ms": 0.0
+    }
+  },
+  "sql_statements_last_run": 593
+}

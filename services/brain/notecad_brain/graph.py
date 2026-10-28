@@ -258,8 +258,9 @@ class Graph:
             child_worst = worst("ok", *[worst(k["display_status"], k["child_worst"]) for k in kids])
             if STATUS_RANK[child_worst] < STATUS_RANK["ok"]:
                 child_worst = "ok"
-            self.db.update("nodes", {"id": nid}, {"open_tasks": tasks, "open_alerts": alerts, "display_status": display,
-                                                  "child_worst": child_worst})
+            new = {"open_tasks": tasks, "open_alerts": alerts, "display_status": display, "child_worst": child_worst}
+            if any(n[k] != v for k, v in new.items()):  # unchanged ancestors cost no write
+                self.db.update("nodes", {"id": nid}, new)
 
     def decay(self, ws: str, now_dt=None) -> int:
         """Info rings fade after 24 h, done marks after 48 h (server-side so every device agrees)."""

@@ -15,6 +15,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -104,6 +105,21 @@ ADDED_COLUMNS = [
 ]
 
 
+# Numbered, forward-only schema changes from Phase 6 on: (version, name, statements). The same numbers are the
+# files in supabase/migrations (0006_*.sql ...), so a SQLite brain and Supabase move together. Each runs once, in its
+# own transaction, and is recorded in schema_migrations. Never edit a shipped one: add the next number.
+MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (6, "hot query indexes", [
+        "create index if not exists tasks_node on tasks(node_id, state)",            # roll-up, mind map, history
+        "create index if not exists alerts_node on alerts(node_id, resolved_at)",    # roll-up
+        "create index if not exists nodes_parent on nodes(parent_id)",               # children, roll-up
+        "create index if not exists edges_dst on edges(dst_id)",                     # retrieval 1-hop
+        "create index if not exists inbox_capture on inbox(capture_id)",             # undo, resolve
+        "create index if not exists action_log_unsynced on action_log(workspace_id, synced_at)",  # sync status
+    ]),
+]
+
+
 class Database:
     def __init__(self, url: str):
         self.url = url
@@ -118,6 +134,8 @@ class Database:
             self._shared.execute("pragma foreign_keys=on")
             if path != ":memory:":
                 self._shared.execute("pragma journal_mode=wal")
+                self._shared.execute("pragma synchronous=normal")  # with WAL: durable at checkpoints, far fewer fsyncs
+                self._shared.execute("pragma busy_timeout=5000")
         else:
             import psycopg  # pyright: ignore[reportMissingImports]  (optional: pip install .[postgres])
             from psycopg.rows import dict_row  # pyright: ignore[reportMissingImports]
@@ -143,6 +161,18 @@ class Database:
                 self._conn.execute(f"alter table {table} add column if not exists {column} {typ}")
             elif column not in {r[1] for r in self._conn.execute(f"pragma table_info({table})").fetchall()}:
                 self._conn.execute(f"alter table {table} add column {column} {typ}")
+        self._conn.execute("create table if not exists schema_migrations (version integer primary key, name text not null, "
+                           "applied_at text not null)")
+        done = {r[0] if isinstance(r, tuple) else r["version"] for r in
+                self._conn.execute("select version from schema_migrations").fetchall()}
+        for version, name, statements in MIGRATIONS:
+            if version in done:
+                continue
+            with self.tx():
+                for stmt in statements:
+                    self.execute(stmt)
+                self.execute("insert into schema_migrations(version, name, applied_at) values (?, ?, ?)",
+                             (version, name, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
 
     @contextmanager
     def tx(self) -> Iterator["Database"]:
