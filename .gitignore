@@ -40,3 +40,7 @@ Thumbs.db
 
 # TypeScript build cache
 *.tsbuildinfo
+
+# Local exports and recordings (not part of the source)
+/NoteCad.zip
+/Ionity_AI_notepad.mp4
