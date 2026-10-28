@@ -87,7 +87,7 @@ def make_routers(settings: Settings) -> RouterChain:
             chain.append(LocalRouter(OpenAICompatLLM(settings.local_base_url, settings.local_model, timeout=60)))
         elif name == "rules":
             chain.append(RulesRouter())
-    return RouterChain(chain or [RulesRouter()])
+    return RouterChain(chain or [RulesRouter()], fast_path=settings.rules_fast_path)
 
 
 def make_embedder(settings: Settings):

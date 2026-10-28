@@ -25,6 +25,8 @@ class Settings:
     # router order: claude (cloud), local (Gemma via Ollama / llama-server), rules (no model)
     routers: str = field(default_factory=lambda: _env("ROUTERS", "claude,local,rules"))
     claude_model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-sonnet-5-5"))
+    # Phase 6: plain field-work reports the rules are sure of skip the model (0 turns it off)
+    rules_fast_path: bool = field(default_factory=lambda: _env("RULES_FAST_PATH", "1") == "1")
     local_base_url: str = field(default_factory=lambda: _env("LOCAL_BASE_URL", "http://127.0.0.1:11434"))
     local_model: str = field(default_factory=lambda: _env("LOCAL_MODEL", "notecad-gemma4-e2b"))
     # embeddings for retrieval: openai (Ollama / llama-server), hash (no model), none

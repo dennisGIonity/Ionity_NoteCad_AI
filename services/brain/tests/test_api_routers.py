@@ -157,11 +157,17 @@ def test_local_router_maps_flat_answer_to_actions():
     ids = seed_farm(b)
 
     def fn(msgs, schema):
-        assert ids["pump"] in schema["properties"]["node_id"]["enum"]
-        return json.dumps({"node_id": ids["pump"], "kind": "problem", "severity": "critical",
+        # the model sees short labels (n1, n2 ...) for the listed nodes, and only those are allowed
+        nodes = msgs[1]["content"].split("NODES:\n")[1].split("\n\n")[0]
+        listing = dict(line.split(" | ")[:2] for line in nodes.splitlines())
+        pump = next(lab for lab, path in listing.items() if path.endswith("Main Water Pump"))
+        assert set(schema["properties"]["node_id"]["enum"]) == {*listing, "none"}
+        assert ids["pump"] not in msgs[1]["content"]
+        return json.dumps({"node_id": pump, "kind": "problem", "severity": "critical",
                            "note": "Main water pump is leaking badly.", "task_title": "Repair main pump leak",
                            "assignee": "Sipho", "place_node_id": "none", "new_item_title": "", "confidence": 0.9})
     out = LocalRouter(ScriptedLLM(fn)).route(_ctx(b, ids, "the main water pump is leaking badly, Sipho must fix it"))
+    assert out["actions"][0]["node_id"] == ids["pump"]  # the label maps back to the real node
     types = [a["type"] for a in out["actions"]]
     assert types == ["append_note", "set_status", "create_alert", "create_task"]
     assert out["actions"][3]["assignee_hint"] == "Sipho" and out["actions"][3]["priority"] == "urgent"

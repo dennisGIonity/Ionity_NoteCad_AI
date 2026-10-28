@@ -298,3 +298,48 @@ def test_history_plays_the_voice_note(tmp_path):
     assert c.get(f"/api/v1/captures/{typed['capture_id']}/audio").status_code == 404
     b.db.execute("update captures set audio_path=? where id=?", (str(tmp_path / "b.db"), r["capture_id"]))
     assert c.get(f"/api/v1/captures/{r['capture_id']}/audio").status_code == 404  # outside audio_dir: never served
+
+
+# ---------------------------------------------------------------- Stage 2: the rules fast path
+def _field_ctx(event):
+    cands = [_cand("f705", "Fields > South Block > Field South 705", "field", 0.99, ["south 705", "field 705"], "sb"),
+             _cand("sb", "Fields > South Block", "group", 0.86, ["south block"], "fields")]
+    for c in cands:
+        c["attributes"] = {"area_ha": 20} if c["kind"] == "field" else {}
+    return _ctx(event, cands)
+
+
+def test_a_plain_field_report_skips_the_model():
+    from notecad_brain.routers import RouterChain
+    calls = []
+
+    class Model:
+        name = "local:test"
+
+        def route(self, ctx):
+            calls.append(ctx.event)
+            raise RuntimeError("not expected")
+    chain = RouterChain([Model(), RulesRouter()], fast_path=True)
+    out, name, _ = chain.route(_field_ctx("Today I planted Field South 705."))
+    assert name == "rules:sure" and calls == []
+    assert any(a["type"] == "update_attributes" and a["set"].get("planted_ha") == 20 for a in out["actions"])
+
+
+def test_the_fast_path_leaves_anything_else_to_the_model():
+    from notecad_brain.routers import rules_are_sure
+    for event in ("I will plant Field South 705 tomorrow", "Planted Field South 705, ask Sipho to check the drip lines",
+                  "Planted Field South 705 but the pump is leaking", "We planted it yesterday",
+                  "Remember to plant Field South 705"):
+        assert rules_are_sure(_field_ctx(event)) is None, event
+
+
+def test_the_fast_path_can_be_switched_off():
+    from notecad_brain.routers import RouterChain
+
+    class Model:
+        name = "local:test"
+
+        def route(self, ctx):
+            return RulesRouter().route(ctx)
+    _, name, _ = RouterChain([Model(), RulesRouter()], fast_path=False).route(_field_ctx("Today I planted Field South 705."))
+    assert name == "local:test"

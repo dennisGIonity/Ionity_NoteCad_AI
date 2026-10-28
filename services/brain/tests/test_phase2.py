@@ -258,8 +258,8 @@ def test_local_router_gets_the_anchor(farm):
                            "new_item_title": "", "confidence": 0.9})
     b.routers = RouterChain([LocalRouter(ScriptedLLM(fn))])
     _capture(b, ids["ws"], "Needs new tyres before the season.", context_node_id=ids["tractors"])
-    assert "Operations > Vehicles > Tractors" in seen["system"] and ids["tractors"] in seen["system"]
-    assert seen["user"].split("NODES:\n")[1].startswith(ids["tractors"])  # listed first
+    assert "'Operations > Vehicles > Tractors' (n1)" in seen["system"]  # the anchor, by its label
+    assert seen["user"].split("NODES:\n")[1].startswith("n1 | Operations > Vehicles > Tractors")  # listed first
 
 
 def test_capture_endpoint_multipart_audio_json_and_errors(tmp_path):
