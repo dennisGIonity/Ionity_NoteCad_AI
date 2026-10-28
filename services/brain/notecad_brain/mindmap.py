@@ -145,12 +145,17 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
             own_notes[v].append(n)
 
     # ------------------------------------------------------------ nodes
+    channels_of: dict[str, list[dict]] = {}
+    for c in rows:
+        if c["kind"] == "channel" and c["parent_id"]:
+            channels_of.setdefault(c["parent_id"], []).append(c)
+    paths = graph.paths(rows)
     out: dict[str, dict] = {}
     for n in rows:
         if n["kind"] == "channel":
             continue
         typ = "root" if n["parent_id"] is None else "category" if n["kind"] in CATEGORY_KINDS else "entity"
-        chans = [c for c in rows if c["parent_id"] == n["id"] and c["kind"] == "channel"]
+        chans = channels_of.get(n["id"], [])
         node_ids = [n["id"]] + [c["id"] for c in chans]
         tl, al = own_tasks.get(n["id"], []), own_alerts.get(n["id"], [])
         done = sum(done_counts.get(i, 0) for i in node_ids)
@@ -158,7 +163,7 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
                                                                              STATUS_RANK["ok"]) else None
         out[n["id"]] = {
             "id": n["id"], "type": typ, "kind": n["kind"], "title": n["title"], "parent_id": n["parent_id"],
-            "depth": n["depth"], "path": graph.path_titles(n["id"]) if n["parent_id"] else n["title"],
+            "depth": n["depth"], "path": paths[n["id"]] if n["parent_id"] else n["title"],
             "status": n["status"], "status_reason": n["status_reason"], "display_status": n["display_status"],
             "child_worst": n["child_worst"], "echo_dot": echo is not None, "echo_status": echo,
             "decay": decay_of(n, now),

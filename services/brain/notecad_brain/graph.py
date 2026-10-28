@@ -116,13 +116,34 @@ class Graph:
         return out
 
     def path_titles(self, node_id: str, sep: str = " > ", include_root: bool = False) -> str:
-        n = self.node(node_id)
-        if n is None:
-            return ""
-        chain = [n] + self.ancestors(node_id)
-        if not include_root:
-            chain = [c for c in chain if c["kind"] != "root"]
-        return sep.join(c["title"] for c in reversed(chain))
+        """'Vehicles > Tractors > John Deere 9550 #1': one recursive query (it was one query per ancestor)."""
+        chain = self.db.query("with recursive up(id, parent_id, title, kind, d) as ("
+                              "select id, parent_id, title, kind, 0 from nodes where id=? union all "
+                              "select n.id, n.parent_id, n.title, n.kind, up.d + 1 from nodes n join up on n.id = up.parent_id) "
+                              "select title, kind from up order by d desc", (node_id,))
+        return sep.join(c["title"] for c in chain if include_root or c["kind"] != "root")
+
+    @staticmethod
+    def paths(rows: list[dict], sep: str = " > ") -> dict[str, str]:
+        """path_titles for every row at once, from rows already loaded (retrieval, the mind map): no queries."""
+        by = {r["id"]: r for r in rows}
+        memo: dict[str, str] = {}
+
+        def path(nid: str) -> str:
+            if nid in memo:
+                return memo[nid]
+            chain, cur = [], by.get(nid)
+            while cur is not None and cur["id"] not in memo:
+                chain.append(cur)
+                cur = by.get(cur["parent_id"]) if cur["parent_id"] else None
+            base = memo[cur["id"]] if cur is not None else ""
+            for n in reversed(chain):
+                own = "" if n["kind"] == "root" else n["title"]
+                base = memo[n["id"]] = sep.join(x for x in (base, own) if x)
+            return memo[nid]
+        for r in rows:
+            path(r["id"])
+        return memo
 
     def spine(self, ws: str, max_depth: int = 2) -> list[dict]:
         return [self._row(r) for r in self.db.query(

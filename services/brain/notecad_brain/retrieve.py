@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
 
 import numpy as np
 from rapidfuzz import fuzz
@@ -62,23 +63,35 @@ class Retriever:
         self.embedder = embedder
         self.top_k = top_k
         self.max_candidates = max_candidates
+        # per workspace: the text tag of every node's vector, and the vectors as one matrix (row i = ids[i]).
+        # Rebuilt only when a node's text changed; a note's events reuse it, and scoring is one matrix product.
+        self._vecs: dict[str, tuple[dict[str, str], dict[str, int], np.ndarray]] = {}
+        self._lock = threading.Lock()
 
     def _ensure_embeddings(self, ws: str, nodes: list[dict], paths: dict[str, str],
-                           aliases: dict[str, list[tuple[str, float]]]) -> dict[str, np.ndarray]:
+                           aliases: dict[str, list[tuple[str, float]]]) -> tuple[dict[str, int], np.ndarray | None]:
         if self.embedder is None:
-            return {}
-        have = {r["node_id"]: r["model"] for r in self.graph.db.query(
-            "select e.node_id, e.model from node_embeddings e join nodes n on n.id=e.node_id where n.workspace_id=?", (ws,))}
-        out: dict[str, np.ndarray] = {}
-        for n in nodes:
-            text = _node_text(n, paths[n["id"]], [a for a, _ in aliases.get(n["id"], [])])
-            tag = f"{self.embedder.name}#{hashlib.sha1(text.encode()).hexdigest()[:10]}"
-            if have.get(n["id"]) != tag:
-                self.graph.set_embedding(n["id"], self.embedder.embed_doc(text), tag)
-        for r in self.graph.db.query("select e.node_id, e.vec from node_embeddings e join nodes n on n.id=e.node_id "
-                                     "where n.workspace_id=?", (ws,)):
-            out[r["node_id"]] = np.frombuffer(bytes(r["vec"]), dtype=np.float32)
-        return out
+            return {}, None
+        texts = {n["id"]: _node_text(n, paths[n["id"]], [a for a, _ in aliases.get(n["id"], [])]) for n in nodes}
+        tags = {i: f"{self.embedder.name}#{hashlib.sha1(t.encode()).hexdigest()[:10]}" for i, t in texts.items()}
+        with self._lock:
+            cached = self._vecs.get(ws)
+            if cached and cached[0] == tags:
+                return cached[1], cached[2]
+            have = {r["node_id"]: r["model"] for r in self.graph.db.query(
+                "select e.node_id, e.model from node_embeddings e join nodes n on n.id=e.node_id where n.workspace_id=?", (ws,))}
+            for nid, tag in tags.items():
+                if have.get(nid) != tag:  # new node, or its title, path or aliases changed
+                    self.graph.set_embedding(nid, self.embedder.embed_doc(texts[nid]), tag)
+            rows = [r for r in self.graph.db.query(
+                "select e.node_id, e.vec from node_embeddings e join nodes n on n.id=e.node_id where n.workspace_id=?", (ws,))
+                if r["node_id"] in tags]
+            if not rows:
+                return {}, None
+            index = {r["node_id"]: i for i, r in enumerate(rows)}
+            mat = np.vstack([np.frombuffer(bytes(r["vec"]), dtype=np.float32) for r in rows])
+            self._vecs[ws] = (tags, index, mat)
+            return index, mat
 
     def neighbours(self, node_id: str) -> list[tuple[str, str]]:
         """One hop around a node: parent, children and cross-links, as (node_id, how)."""
@@ -99,16 +112,18 @@ class Retriever:
         if not nodes:
             return []
         by_id = {n["id"]: n for n in nodes}
-        paths = {n["id"]: self.graph.path_titles(n["id"]) for n in nodes}
+        paths = Graph.paths(nodes)  # the root is not in nodes, and is never part of a path
         aliases = self.graph.all_aliases(ws)
-        vecs = self._ensure_embeddings(ws, nodes, paths, aliases)
-        q = self.embedder.embed_query(event) if (self.embedder is not None and vecs) else None
+        index, mat = self._ensure_embeddings(ws, nodes, paths, aliases)
+        q = self.embedder.embed_query(event) if (self.embedder is not None and mat is not None) else None
+        sims = mat @ q if q is not None and mat is not None else None
         ev_nums = set(_NUM.findall(event))
         scored = []
         for n in nodes:
             names = [(n["title"], 2.0)] + aliases.get(n["id"], [])
             fz = _fuzzy(event, names)
-            em = float(np.dot(q, vecs[n["id"]])) if q is not None and n["id"] in vecs else 0.0
+            row = index.get(n["id"]) if sims is not None else None
+            em = float(sims[row]) if sims is not None and row is not None else 0.0
             # embeddings from small models sit around 0.2-0.6; stretch them onto the fuzzy scale
             em_s = max(0.0, min(1.0, (em - 0.15) / 0.45)) if q is not None else 0.0
             score = max(fz * 0.95, em_s) + (0.05 if fz > 0.6 and em_s > 0.5 else 0.0)

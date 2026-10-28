@@ -1,0 +1,14 @@
+{
+  "workspace": "perf-2000",
+  "nodes": 2000,
+  "embed": "openai",
+  "first_call_s": 41.56,
+  "retrieve_ms": {
+    "p50": 296.7,
+    "max": 354.3
+  },
+  "mindmap_ms": {
+    "p50": 633.6,
+    "max": 714.8
+  }
+}

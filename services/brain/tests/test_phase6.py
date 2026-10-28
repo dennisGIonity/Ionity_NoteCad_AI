@@ -343,3 +343,27 @@ def test_the_fast_path_can_be_switched_off():
             return RulesRouter().route(ctx)
     _, name, _ = RouterChain([Model(), RulesRouter()], fast_path=False).route(_field_ctx("Today I planted Field South 705."))
     assert name == "local:test"
+
+
+# ---------------------------------------------------------------- Stage 2: retrieval and the map without N+1 queries
+def test_paths_in_memory_match_path_titles(farm):
+    from notecad_brain.graph import Graph
+    b, ids = farm
+    rows = b.graph.nodes(ids["ws"])
+    paths = Graph.paths(rows)
+    assert all(paths[r["id"]] == b.graph.path_titles(r["id"]) for r in rows)
+    assert paths[ids["pump"]] == "Infrastructure > Water > Main Water Pump"
+
+
+def test_vectors_are_reused_until_a_node_changes(farm):
+    b, ids = farm
+    b.retriever.candidates(ids["ws"], "the pump is leaking")
+    calls = []
+    real = b.embedder.embed_doc
+    b.embedder.embed_doc = lambda t: calls.append(t) or real(t)
+    first = b.retriever._vecs[ids["ws"]][2]
+    b.retriever.candidates(ids["ws"], "the sheep are out")
+    assert calls == [] and b.retriever._vecs[ids["ws"]][2] is first  # nothing re-embedded, same matrix
+    b.graph.rename(ids["pump"], "Main Borehole Pump")
+    top = b.retriever.candidates(ids["ws"], "main borehole pump")
+    assert len(calls) == 1 and top[0]["node_id"] == ids["pump"]  # only the renamed node
