@@ -134,8 +134,11 @@ more in message passing than the layout itself (measured in Stage 4). ELK is hea
 
 ## Consequences
 
-- Tests: brain 105 → see the final count in the build status; companion 45; desktop and phone Vitest; Playwright
-  flows and map performance against the running stack in Edge.
-- Postgres was not available on WABAKIPI: the Postgres parametrisations and the Supabase migrations 0005-0006 were not
+- Tests at the end of Phase 6: brain 113 passed (1 skipped: Postgres), companion 45, desktop Vitest 29, phone 2,
+  Playwright 22 (owner flows, fold flows, performance) against the running stack in the installed Edge.
+- An independent review of the whole diff (Stage 5) found no secrets, no missing licence headers and nothing
+  committed that must not be; its sync, DNS-rebinding, tus and cycle findings were fixed with tests.
+- Postgres was not available on WABAKIPI: the Postgres parametrisation and Supabase migrations 0005-0006 were not
   run against a database in this phase.
 - No Claude key in the vault: Claude prompt caching is still to do and to measure.
+- Results and what is still open: `docs\BUILD_STATUS.md`.

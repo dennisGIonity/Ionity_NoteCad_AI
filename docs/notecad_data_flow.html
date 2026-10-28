@@ -67,7 +67,7 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
 
 <div class="wrap">
 <header>
-  <div class="eyebrow">Ionity NoteCad · Phase 4 · 23 October 2026</div>
+  <div class="eyebrow">Ionity NoteCad · Phase 6 · 28 October 2026</div>
   <h1>From a voice note to the right branch</h1>
   <p class="lede">How one spoken note travels from the desktop recorder through the NoteCad brain, splits into events, finds its place in the owner's own map, and turns into notes, tasks and alerts that go to the right person, while the mind map lights up the nodes it changed. Every box below is running code on WABAKIPI: <code>apps/desktop</code>, <code>services/brain</code> and <code>services/companion</code>, with Gemma 4 and Whisper on the RTX 4060.</p>
 </header>
@@ -278,7 +278,7 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
       <path class="edge-d" d="M990 478 V466" marker-end="url(#a)"/>
     </svg>
     </div>
-    <figcaption>Steps 1–6 follow the blueprint's routing pipeline. The router chain is the only place a model writes; validation decides whether its answer is written or held for the owner.</figcaption>
+    <figcaption>Steps 1–6 follow the blueprint's routing pipeline. The router chain is the only place a model writes; validation decides whether its answer is written or held for the owner. Since Phase 6 a plain field-work report the rules are sure of ("Today I planted field south 705") skips the model (<code>rules:sure</code> in provenance), and Gemma sees short labels (n1, n2 …) instead of node ids (ADR 0013). Undo of a note also forgets what an Inbox answer for it taught.</figcaption>
   </figure>
   <div class="states" aria-label="Capture states">
     <span class="pill p-hot">queued</span><span class="arrow">→</span><span class="pill p-hot">transcribing</span><span class="arrow">→</span><span class="pill p-hot">routing</span><span class="arrow">→</span><span class="pill p-ok">applied</span><span class="arrow">or</span><span class="pill p-warn">needs_review</span><span class="arrow">or</span><span class="pill p-crit">failed</span><span class="arrow">· later</span><span class="pill p-hot">undone</span>
@@ -400,6 +400,7 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
 <section>
   <h2>3 · What the owner sees in the tree</h2>
   <p>Colour is computed from data, never set by hand. A problem filed on a channel turns its parent the same colour; every ancestor above shows a dot for the worst thing below it.</p>
+  <p>Since Phase 6 the map <strong>folds</strong>: it opens on the main areas, and each folded card carries a badge of what it hides (<em>+14 · 2 alerts · 3 tasks</em>) outlined in the worst status underneath, so a problem deep in a folded branch is never invisible. A note that lands inside a folded branch unfolds nothing: the nearest card on screen pulses. Screens: <code>docs/media/fold-*.png</code>.</p>
   <figure>
     <div class="scroll">
     <svg viewBox="0 0 1140 300" role="img" aria-label="Tree after two notes: Main Water Pump critical with Water and Infrastructure showing a critical echo dot; Sheep Health Alerts critical, Sheep critical through the channel, Livestock and Operations showing echo dots.">
@@ -457,14 +458,14 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
 
 <section>
   <h2>The three showcase notes</h2>
-  <p>Run with <code>tools/seed_farm_showcase.py --reset-clean --auto</code> on a fresh farm, typed and then spoken (Windows speech, transcribed by Whisper). Times are from sending the note to the map being updated, Gemma 4 routing on the RTX 4060.</p>
+  <p>Run with <code>tools/seed_farm_showcase.py --reset-clean --auto</code> on a fresh farm, typed and then spoken (Windows speech, transcribed by Whisper). Times are from sending the note to the map being updated, Gemma 4 routing on the RTX 4060. Typed times are in-process (<code>field_test.py --showcase</code>), spoken times over HTTP; Phase 6 numbers, earlier ones in brackets.</p>
   <div class="tablebox">
   <table>
     <thead><tr><th>Note</th><th>Typed</th><th>Spoken: what Whisper heard</th><th>On the map</th></tr></thead>
     <tbody>
       <tr><td><em>"Wheel needs changing on tractor model John Deere 9550 - number 1"</em></td><td><span class="pill p-ok">pass</span> 3.3 s</td><td>"Wheel needs changing on track to model John Deere 9550, number 1." <span class="pill p-ok">pass</span> 4.0 s</td><td>task "Change wheel on JD 9550 #1" on John Deere 9550 #1, warning; #2 untouched</td></tr>
-      <tr><td><em>"Today I planted field south 704 to 708"</em></td><td><span class="pill p-ok">pass</span> 11.6 s</td><td>"Today I planted Field South 704 to 708." <span class="pill p-ok">pass</span> 12.4 s</td><td>five events; Field South 704–708 planted 100 % (236 ha), South Block 100 %, no stray tasks</td></tr>
-      <tr><td><em>"Ask Sipho to check the water pump on the North borehole"</em></td><td><span class="pill p-ok">pass</span> 2.3 s</td><td>"Ask Sipho to check the water pump on the north borehole." <span class="pill p-ok">pass</span> 2.8 s</td><td>task "Check North borehole pump" on North Borehole Pump, assigned to Sipho Dlamini</td></tr>
+      <tr><td><em>"Today I planted field south 704 to 708"</em></td><td><span class="pill p-ok">pass</span> 0.1 s (was 11.6 s)</td><td>"Today I planted Field South 704 to 708." <span class="pill p-ok">pass</span> 2.3 s (was 12.4 s)</td><td>five events; Field South 704–708 planted 100 % (236 ha), South Block 100 %, no stray tasks</td></tr>
+      <tr><td><em>"Ask Sipho to check the water pump on the North borehole"</em></td><td><span class="pill p-ok">pass</span> 1.8 s (was 2.3 s)</td><td>"Ask Sipho to check the water pump on the north borehole." <span class="pill p-ok">pass</span> 2.9 s</td><td>task "Check North borehole pump" on North Borehole Pump, assigned to Sipho Dlamini</td></tr>
     </tbody>
   </table>
   </div>
@@ -478,8 +479,8 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
   <table>
     <thead><tr><th>Router</th><th>Right first time</th><th>Time for 21 events</th><th>Where it goes wrong</th></tr></thead>
     <tbody id="fieldrows">
-      <tr><td>Gemma 4 E2B on the RTX 4060, rules as guard</td><td><span class="pill p-ok">19–20 / 21 · 90–95 %</span></td><td>40 s (about 2 s per event)</td><td>a broken leg once filed as a plain note; "water gekry" pulled towards the pump</td></tr>
-      <tr><td>Showcase, 3 notes: Gemma 4 / rules only</td><td><span class="pill p-ok">3 / 3 · 3 / 3</span></td><td>16 s / 0.1 s</td><td>none; checked by <code>tools/field_test.py --showcase</code></td></tr>
+      <tr><td>Gemma 4 E2B on the RTX 4060, rules as guard</td><td><span class="pill p-ok">20 / 21 · 95.2 %</span></td><td>37–41 s (about 1.7 s per event)</td><td>"water gekry" pulled towards the pump</td></tr>
+      <tr><td>Showcase, 3 notes: Gemma 4 / rules only</td><td><span class="pill p-ok">3 / 3 · 3 / 3</span></td><td>5.2 s / 0.1 s (was 16 s)</td><td>none; checked by <code>tools/field_test.py --showcase</code></td></tr>
       <tr><td>Rules only (no model, no internet)</td><td><span class="pill p-warn">17 / 21 · 81 %</span></td><td>0.1 s</td><td>words it has never heard ("calf") go to the Inbox; two equal matches ask the owner</td></tr>
       <tr><td>Claude Sonnet (cloud)</td><td><span class="pill p-hot">not run</span></td><td>–</td><td>needs the Ionity API key in <code>E:\.claude\_vault\notecad.env</code></td></tr>
     </tbody>
@@ -487,5 +488,5 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
   </div>
 </section>
 
-<footer>Ionity NoteCad · Ionity Global (Pty) Ltd · AEDI · Policy 986 AED · License AED 900 · (c) 2026 Ionity Global (Pty) Ltd. Author: Dennis Grobler. Code: <code>apps/desktop</code>, <code>services/brain</code>, <code>services/companion</code>, <code>services/start_notecad.ps1</code>, schema <code>packages/schema/actions.schema.json</code>, Supabase <code>supabase/migrations/0001_notecad_core.sql</code>.</footer>
+<footer>Ionity NoteCad · Ionity Global (Pty) Ltd · AEDI · Policy 986 AED · License AED 900 · (c) 2026 Ionity Global (Pty) Ltd. Author: Dennis Grobler. Code: <code>apps/desktop</code>, <code>services/brain</code>, <code>services/companion</code>, <code>services/start_notecad.ps1</code>, schema <code>packages/schema/actions.schema.json</code>, fold logic <code>packages/core/src/fold.ts</code>, Supabase <code>supabase/migrations/0001</code>–<code>0006</code>. Decisions: ADR 0007–0013.</footer>
 </div>
