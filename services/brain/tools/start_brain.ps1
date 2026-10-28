@@ -18,6 +18,7 @@ param(
   [switch]$HubOnly,
   [string]$WorkerId,
   [string]$SyncTarget,
+  [switch]$NoWait,   # start and return; the caller checks /health
   [switch]$Stop
 )
 $data = Join-Path $Root "data\$Name"; $logs = Join-Path $data "logs"
@@ -85,9 +86,11 @@ $p = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory (Join-Pat
   -ArgumentList @("-m", "uvicorn", "notecad_brain.api:app", "--host", $bind, "--port", "$Port")
 $p.Id | Set-Content $pidFile
 $t = Get-Date
-while (((Get-Date) - $t).TotalSeconds -lt 60) {
-  try { if ((Invoke-WebRequest "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { break } } catch {}
-  Start-Sleep -Milliseconds 700
+while (-not $NoWait -and ((Get-Date) - $t).TotalSeconds -lt 60) {
+  $c = [System.Net.Sockets.TcpClient]::new()
+  $up = try { $c.ConnectAsync("127.0.0.1", $Port).Wait(200) -and $c.Connected } catch { $false } finally { $c.Dispose() }
+  if ($up) { try { if ((Invoke-WebRequest "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { break } } catch {} }
+  Start-Sleep -Milliseconds 250
 }
 Write-Host "brain '$Name' on http://127.0.0.1:$Port  (worker $($env:NC_BRAIN_WORKER_ID); docs at /docs)"
 if ($Lan) {

@@ -40,6 +40,12 @@ $Models   = @("notecad-gemma4-e2b", "notecad-embeddinggemma")
 function Get-Json([string]$url, [int]$timeout = 3) {
   try { return Invoke-RestMethod $url -TimeoutSec $timeout } catch { return $null }
 }
+function Test-Port([int]$port, [int]$ms = 200) {
+  # Windows takes about 2 s to refuse a loopback connection over HTTP; a bare TCP connect with a short timeout
+  # says "nothing there" at once, so optional parts (edge node, Vite) do not slow every health check
+  $c = [System.Net.Sockets.TcpClient]::new()
+  try { return $c.ConnectAsync("127.0.0.1", $port).Wait($ms) -and $c.Connected } catch { return $false } finally { $c.Dispose() }
+}
 function Test-Url([string]$url) {
   try { return (Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch { return $false }
 }
@@ -81,7 +87,7 @@ function Get-Health {
   $appOk = Test-Url "http://127.0.0.1:8788/app/"
   $rows += [pscustomobject]@{ Name = "Desktop UI"; Port = ":8788/app"; State = $(if ($appOk) { "OK" } else { "FAIL" })
     Detail = $(if ($appOk) { "http://127.0.0.1:8788/" } else { "not built: run with -Rebuild" }) }
-  if ($Ui -eq "dev" -or (Test-Url "http://127.0.0.1:5173/")) {
+  if ($Ui -eq "dev" -or (Test-Port 5173)) {
     $devOk = Test-Url "http://127.0.0.1:5173/"
     $rows += [pscustomobject]@{ Name = "UI dev server"; Port = ":5173"; State = $(if ($devOk) { "OK" } else { "WAIT" }); Detail = "http://127.0.0.1:5173/" }
   }
@@ -103,7 +109,7 @@ function Get-Health {
         Detail = $(if ($pr.ready) { "LAN at $($pr.urls -join ', '): Pair a phone in the app" } else { "this PC only (start with -Lan)" }) }
     }
   }
-  if ($EdgeNode -or (Test-Url "http://127.0.0.1:8789/health")) {
+  if ($EdgeNode -or (Test-Port 8789)) {
     $e = Get-Json "http://127.0.0.1:8789/api/health"
     $rows += [pscustomobject]@{ Name = "Edge AI Node"; Port = ":8789"; State = $(if ($e.ok) { "OK" } else { "FAIL" })
       Detail = $(if ($e.ok) { "sync hub, $($e.db)" } else { "not answering" }) }
@@ -149,16 +155,28 @@ if ($Stop) {
 # ------------------------------------------------------------------ start
 $t0 = Get-Date
 Write-Host "  [1/4] Ollama + companion" -ForegroundColor Cyan
-& $Companion | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
-foreach ($m in $Models) {  # load both models into the GPU now, so the first note is not the slow one
-  $body = if ($m -like "*embed*") { @{ model = $m; input = "warm"; keep_alive = "60m" } } else { @{ model = $m; prompt = ""; keep_alive = "60m" } }
+& $Companion -NoWait | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }  # the brain starts while it loads
+# load both models into the GPU now, so the first note is not the slow one; in the background, while the UI and
+# the brain start (the brain's Whisper warm-up runs at the same time)
+Add-Type -AssemblyName System.Net.Http
+$http = [System.Net.Http.HttpClient]::new()
+$http.Timeout = [TimeSpan]::FromSeconds(120)
+$warming = foreach ($m in $Models) {
+  $body = if ($m -like "*embed*") { @{ model = $m; input = "warm"; keep_alive = -1 } } else { @{ model = $m; prompt = ""; keep_alive = -1 } }
   $path = if ($m -like "*embed*") { "api/embed" } else { "api/generate" }
-  try { Invoke-RestMethod "http://127.0.0.1:11434/$path" -Method Post -Body ($body | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 120 | Out-Null } catch {}
+  $http.PostAsync("http://127.0.0.1:11434/$path", [System.Net.Http.StringContent]::new(($body | ConvertTo-Json), [Text.Encoding]::UTF8, "application/json"))
 }
 
 Write-Host "  [2/4] UI build" -ForegroundColor Cyan
 $dist = Join-Path $App "dist\index.html"
-if ($Rebuild -or -not (Test-Path $dist) -or $Ui -eq "dev") {
+# rebuild only when a source is newer than the build (or -Rebuild): an unchanged UI costs nothing at start
+$stale = $false
+if (Test-Path $dist) {
+  $built = (Get-Item $dist).LastWriteTimeUtc
+  $src = @(Get-ChildItem (Join-Path $App "src") -Recurse -File) + @(Get-Item (Join-Path $App "index.html"), (Join-Path $App "package-lock.json"), (Join-Path $App "vite.config.ts") -ErrorAction SilentlyContinue)
+  $stale = @($src | Where-Object { $_.LastWriteTimeUtc -gt $built }).Count -gt 0
+}
+if ($Rebuild -or $stale -or -not (Test-Path $dist) -or $Ui -eq "dev") {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Host "        node.js not found: the UI cannot be built" -ForegroundColor Red }
   else {
     New-Item -ItemType Directory -Force $UiLogs | Out-Null
@@ -168,14 +186,14 @@ if ($Rebuild -or -not (Test-Path $dist) -or $Ui -eq "dev") {
         Write-Host "        installing UI packages (first run)..." -ForegroundColor DarkGray
         cmd /c "npm.cmd ci --include=dev --no-audit --no-fund > `"$UiLogs\npm-ci.log`" 2>&1"
       }
-      if ($Rebuild -or -not (Test-Path $dist)) {
-        Write-Host "        building apps\desktop..." -ForegroundColor DarkGray
+      if ($Rebuild -or $stale -or -not (Test-Path $dist)) {
+        Write-Host ("        building apps\desktop{0}..." -f $(if ($stale -and -not $Rebuild) { " (sources changed)" } else { "" })) -ForegroundColor DarkGray
         cmd /c "npm.cmd run build > `"$UiLogs\build.log`" 2>&1"
         if ($LASTEXITCODE -ne 0) { Write-Host "        build failed: see $UiLogs\build.log" -ForegroundColor Red }
       }
     } finally { Pop-Location }
   }
-} else { Write-Host "        apps\desktop\dist is built (use -Rebuild after UI changes)" -ForegroundColor DarkGray }
+} else { Write-Host "        apps\desktop\dist is up to date" -ForegroundColor DarkGray }
 
 Write-Host "  [3/4] brain" -ForegroundColor Cyan
 $brainArgs = @{}
@@ -184,7 +202,7 @@ if ($EdgeNode) {
   & $BrainPs -Name edge-node -Port 8789 -HubOnly -Lan:$Lan | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
   $brainArgs.SyncTarget = "http://127.0.0.1:8789"
 }
-& $BrainPs @brainArgs | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
+& $BrainPs @brainArgs -NoWait | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
 
 Write-Host "  [4/4] UI" -ForegroundColor Cyan
 Stop-Ui
@@ -207,6 +225,8 @@ switch ($mode) {
 }
 
 # ------------------------------------------------------------------ wait until everything is green
+try { [void][System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]@($warming), 120000) } catch {}
+$http.Dispose()
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 do {
   $rows = Get-Health
@@ -215,7 +235,7 @@ do {
   $waiting = @($rows | Where-Object { ($_.State -eq "WAIT" -or ($grace -and $_.State -eq "FAIL")) -and $_.Name -ne "Desktop UI" })
   if (-not $waiting) { break }
   Write-Host ("        waiting for {0}..." -f (($waiting | ForEach-Object { $_.Name }) -join ", ")) -ForegroundColor DarkGray
-  Start-Sleep -Seconds 3
+  Start-Sleep -Milliseconds 800
 } while ((Get-Date) -lt $deadline)
 
 if ($Showcase -and (Get-Json "http://127.0.0.1:8788/api/health").ok) {

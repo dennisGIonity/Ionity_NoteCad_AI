@@ -16,6 +16,7 @@ param(
   [string]$Model   = "gemma-4-E2B-it-Q4_K_M.gguf",
   [int]$Ctx = 8192,
   [switch]$NoApi,
+  [switch]$NoWait,   # start the API and return; the caller checks /health (start_notecad.ps1 starts the brain meanwhile)
   [switch]$Stop
 )
 $models = Join-Path $Root "models"
@@ -35,11 +36,19 @@ if ($Stop) {
   Write-Host "stopped"; return
 }
 
+function Test-Port([int]$port, [int]$ms = 200) {
+  # Windows takes about 2 s to refuse a loopback connection over HTTP; a bare TCP connect with a short timeout
+  # says "nothing there" at once, so optional parts (edge node, Vite) do not slow every health check
+  $c = [System.Net.Sockets.TcpClient]::new()
+  try { return $c.ConnectAsync("127.0.0.1", $port).Wait($ms) -and $c.Connected } catch { return $false } finally { $c.Dispose() }
+}
 function Wait-Url([string]$url, [int]$seconds = 180) {
   $t = Get-Date
+  $port = ([uri]$url).Port
   while (((Get-Date) - $t).TotalSeconds -lt $seconds) {
+    if (-not (Test-Port $port)) { Start-Sleep -Milliseconds 150; continue }  # not listening yet: no 2 s refusal
     try { if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { return } } catch {}
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 300
   }
   throw "$url did not answer"
 }
@@ -49,13 +58,16 @@ if ($Engine -eq "ollama") {
   $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
   if (-not $ollama) { $ollama = Join-Path $Root "runtime\ollama\ollama.exe" }
   if (-not (Test-Path $ollama)) { throw "ollama.exe not found" }
-  try { Wait-Url "http://127.0.0.1:11434/api/version" 3 } catch {
+  if (-not (Test-Port 11434)) {
+    # keep the models in the GPU while Ollama runs: the brain calls the OpenAI-style API, which cannot pass
+    # keep_alive, so without this every note reset the timer to Ollama's 5 minutes and an idle desktop reloaded
+    $env:OLLAMA_KEEP_ALIVE = "-1"
     $srv = Start-Process $ollama -ArgumentList "serve" -PassThru -WindowStyle Hidden `
       -RedirectStandardOutput "$logs\ollama.out.log" -RedirectStandardError "$logs\ollama.err.log"
     $pids += $srv.Id
     Wait-Url "http://127.0.0.1:11434/api/version"
   }
-  $have = & $ollama list 2>$null | Out-String
+  $have = ((Invoke-RestMethod "http://127.0.0.1:11434/api/tags" -TimeoutSec 10).models | ForEach-Object { $_.name }) -join " "
   $mf = Join-Path $data "modelfiles"; New-Item -ItemType Directory -Force $mf | Out-Null
   if ($have -notmatch "notecad-gemma4-e2b") {
     "FROM $models\$Model`nPARAMETER num_ctx $Ctx`nPARAMETER temperature 0.6" | Set-Content "$mf\gemma.Modelfile" -Encoding ascii
@@ -100,5 +112,5 @@ $api = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory (Join-P
   -ArgumentList @("-m", "uvicorn", "notecad_companion.api:app", "--host", "127.0.0.1", "--port", "8787")
 $pids += $api.Id
 $pids | Set-Content $pidFile
-Wait-Url "http://127.0.0.1:8787/health" 60
+if (-not $NoWait) { Wait-Url "http://127.0.0.1:8787/health" 60 }
 Write-Host "companion API on http://127.0.0.1:8787  (docs at /docs)"
