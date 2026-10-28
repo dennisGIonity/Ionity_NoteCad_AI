@@ -22,3 +22,11 @@ describe('outbox.unpark', () => {
     expect((await outbox.get('c'))!.state).toBe('applied')
   })
 })
+
+describe('outbox.unpark after a 404', () => {
+  it('a note refused because the farm was not on that brain is sent again after pairing', async () => {
+    await outbox.put(item('d', { state: 'failed', error: 'This farm is not on the brain: pair again', nextTryAt: Number.MAX_SAFE_INTEGER }))
+    await outbox.unpark()
+    expect((await outbox.get('d'))!.state).toBe('saved')
+  })
+})

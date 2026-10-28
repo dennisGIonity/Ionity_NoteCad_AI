@@ -72,7 +72,7 @@ export const outbox = {
   /** After pairing again: notes parked because the old token was refused are sent again. */
   async unpark(): Promise<void> {
     for (const it of await this.all()) {
-      if (it.state === 'failed' && (it.error ?? '').includes('token')) await this.patch(it.id, { state: 'saved', nextTryAt: 0, error: undefined })
+      if (it.state === 'failed' && /token|pair again/.test(it.error ?? '')) await this.patch(it.id, { state: 'saved', nextTryAt: 0, error: undefined })
     }
   },
   /** Keep a week of filed notes for the list; audio is dropped as soon as a note is filed. */

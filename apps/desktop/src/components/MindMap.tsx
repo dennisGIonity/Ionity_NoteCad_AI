@@ -216,6 +216,9 @@ function Flow() {
   // One effect, one React Flow update per change: a fold or layout change places cards (with animation); counts,
   // highlights and selection only refresh the cards where they are. (Two effects meant two updates of every node.)
   const placed = useRef<{ pos: Map<string, Pos> | null; vis: string }>({ pos: null, vis: '' })
+  // what the cards show right now: an animation that ends later uses these, not the ones it started with
+  const latest = useRef({ hidden, hot, selected })
+  latest.current = { hidden, hot, selected }
   // biome-ignore lint/correctness/useExhaustiveDependencies: tree, fold and radial reach here through pos and visKey
   useEffect(() => {
     if (!tree) return
@@ -238,7 +241,7 @@ function Flow() {
     if (anim.current.raf) cancelAnimationFrame(anim.current.raf)
     const settle = () => {
       entering.current = new Set()
-      const next = buildNodes(tree, visibleIds, pos, opts)
+      const next = buildNodes(tree, visibleIds, pos, { ...opts, ...latest.current })
       setNodes((cur) => keep(cur, next))
     }
     const animate = prev.size > 0 && !reducedMotion() && enter.length + leave.length > 0 && enter.length + leave.length <= ANIM_MAX

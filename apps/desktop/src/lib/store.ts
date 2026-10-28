@@ -176,7 +176,9 @@ export const useApp = create<AppState>((set, get) => ({
       treeCache = { map, tree: t }
       // ids that were deleted or synced away drop out of the saved fold state
       const fold = F.prune(t.idx, get().fold)
-      set({ map, mapError: null, ...(fold.expanded.length !== get().fold.expanded.length || fold.collapsed.length !== get().fold.collapsed.length ? { fold } : {}) })
+      const pruned = fold.expanded.length !== get().fold.expanded.length || fold.collapsed.length !== get().fold.collapsed.length
+      set({ map, mapError: null, ...(pruned ? { fold } : {}) })
+      if (pruned) saveFold(ws, get().layout, fold)
     } catch (e) {
       set({ mapError: (e as Error).message })
     }

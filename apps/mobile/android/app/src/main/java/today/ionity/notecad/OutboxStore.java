@@ -96,7 +96,8 @@ final class OutboxStore {
     /** After pairing again, notes parked on a refused token get another go. */
     static synchronized void unpark(Context c) {
         for (JSONObject o : all(c)) {
-            if (!o.optBoolean("permanent", false) || !o.optString("error", "").contains("token")) continue;
+            int status = o.optInt("status", 0);  // 401 (token) or 404 (farm not on that brain): pairing again can fix both
+            if (!o.optBoolean("permanent", false) || (status != 401 && status != 404 && !o.optString("error", "").contains("pair again"))) continue;
             try {
                 o.put("permanent", false);
                 o.put("state", "saved");
