@@ -293,8 +293,16 @@ class RulesRouter:
             pos = min([low.find(n.lower()) for n, _ in names if len(n) >= 3 and n.lower() in low] or [-1])
             if pos >= 0:
                 s += 0.06 * (1 - pos / max(len(low), 1))
-            rescored.append((s, c))
+            rescored.append((s, c, pos >= 0))
         rescored.sort(key=lambda x: x[0], reverse=True)
+        if len(rescored) > 1:  # "water pump on the North borehole": the named child beats its one-word parent "Water"
+            top_s, top, _ = rescored[0]
+            child = next((r for r in rescored[1:] if top_s - r[0] <= 0.08 and r[2] and r[1]["kind"] != "person"
+                          and r[1].get("path", "").startswith(top.get("path", "\0") + " > ")), None)
+            if child:
+                rescored.remove(child)
+                rescored.insert(0, (top_s, child[1], True))
+        rescored = [(s, c) for s, c, _ in rescored]
         best = rescored[0][1] if rescored else place
         conf = rescored[0][0] if rescored else (place["score"] if place else 0.0)
         back = False
