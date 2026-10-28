@@ -1,0 +1,110 @@
+{
+  "at": "2026-10-28 18:20:25",
+  "memory": {
+    "vram_used_mb": 6814,
+    "vram_total_mb": 8188,
+    "vram_apps": [
+      "27060, C:\\Windows\\System32\\ShellHost.exe, [N/A]",
+      "32884, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\CrossDeviceResume.exe, [N/A]",
+      "27052, C:\\Windows\\explorer.exe, [N/A]",
+      "37420, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\SearchHost.exe, [N/A]",
+      "37456, C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe, [N/A]",
+      "40364, C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.24\\msedgewebview2.exe, [N/A]",
+      "39376, C:\\Program Files\\WindowsApps\\5319275A.WhatsAppDesktop_2.2641.101.0_x64__cv1g1gvanyjgm\\WhatsApp.Root.exe, [N/A]",
+      "41540, C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe, [N/A]",
+      "37092, C:\\Program Files\\WindowsApps\\ULICTekInc.NitroSenseforNotebook_5.1.385.0_x64__nt9dgb7efx6bt\\app\\NitroSense.exe, [N/A]",
+      "43860, C:\\Program Files\\WindowsApps\\ULICTekInc.AcerQuickPanel_3.0.13.0_x64__nt9dgb7efx6bt\\app\\QuickPanel.exe, [N/A]",
+      "42592, C:\\Program Files\\Acer\\QuickPanel\\OSD\\CefSharp.BrowserSubprocess.exe, [N/A]",
+      "44492, C:\\Program Files\\WindowsApps\\AnthropicPBC.Claude_3.6556.2.0_x64__fnn82j28hfe8t\\app\\claude.exe, [N/A]",
+      "46684, C:\\Program Files\\WindowsApps\\AnthropicPBC.Claude_3.6556.2.0_x64__fnn82j28hfe8t\\app\\claude.exe, [N/A]",
+      "43988, C:\\Program Files\\AMD\\CNext\\CNext\\AMDRSSrcExt.exe, [N/A]",
+      "47536, C:\\Program Files\\AMD\\CNext\\CNext\\RadeonSoftware.exe, [N/A]",
+      "34124, E:\\.claude\\Ionity\\.NoteCad\\runtime\\ollama\\lib\\ollama\\llama-server.exe, [N/A]",
+      "7484, E:\\.claude\\Ionity\\.NoteCad\\runtime\\ollama\\lib\\ollama\\llama-server.exe, [N/A]",
+      "43356, C:\\Python314\\python.exe, [N/A]"
+    ],
+    "ram_mb": [
+      {
+        "role": "ollama",
+        "mb": 57
+      },
+      {
+        "role": "companion",
+        "mb": 4
+      },
+      {
+        "role": "companion",
+        "mb": 72
+      },
+      {
+        "role": "brain",
+        "mb": 4
+      },
+      {
+        "role": "brain",
+        "mb": 809
+      },
+      {
+        "role": "python",
+        "mb": 4
+      },
+      {
+        "role": "python",
+        "mb": 36
+      }
+    ],
+    "ram_total_mb": 986
+  },
+  "routes": {
+    "health": {
+      "p50_ms": 1.2,
+      "p95_ms": 1.4
+    },
+    "workspaces": {
+      "p50_ms": 1.5,
+      "p95_ms": 1.9
+    },
+    "mindmap showcase": {
+      "p50_ms": 6.2,
+      "p95_ms": 7.6
+    },
+    "mindmap perf-2000": {
+      "p50_ms": 462.2,
+      "p95_ms": 491.1
+    },
+    "digest": {
+      "p50_ms": 4.8,
+      "p95_ms": 5.8
+    },
+    "sync": {
+      "p50_ms": 10.0,
+      "p95_ms": 10.9
+    },
+    "inbox": {
+      "p50_ms": 1.3,
+      "p95_ms": 1.8
+    },
+    "tasks": {
+      "p50_ms": 1.6,
+      "p95_ms": 2.3
+    },
+    "node": {
+      "p50_ms": 1.6,
+      "p95_ms": 2.2
+    },
+    "node history": {
+      "p50_ms": 2.0,
+      "p95_ms": 3.1
+    },
+    "sync status": {
+      "p50_ms": 1.7,
+      "p95_ms": 2.1
+    }
+  },
+  "gemma": {
+    "ttft_ms_p50": NaN,
+    "tokens_per_s_p50": 98.2,
+    "load_ms_first": 2.7,
+    "runs": 5
+  }
+}
