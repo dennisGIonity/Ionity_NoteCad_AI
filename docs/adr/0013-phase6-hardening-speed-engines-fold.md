@@ -113,7 +113,24 @@ more in message passing than the layout itself (measured in Stage 4). ELK is hea
 
 ### Stage 4: the foldable mind map
 
-See the section added with Stage 4.
+12. **Fold logic is shared and framework-free**: `packages\core\src\fold.ts`, used by the desktop map and the phone's
+    "Record onto" picker, tested on its own (26 Vitest cases).
+13. **State = a default depth plus per-node exceptions** (`{ depth, expanded, collapsed }`). The brief asked for
+    "expanded ids plus a default depth"; with expanded ids alone, folding one node inside an opened level would mean
+    listing every other node, so the state would not stay small. `collapsed` holds only those exceptions.
+    Level steps set the depth and clear the exceptions; per-node actions change only the exceptions.
+14. **Fold is view state**: `localStorage` per device, workspace and layout (`notecad.fold.<ws>.<layout>`); never in
+    `action_log` or `node_layouts`, never synced. The first visit shows the main areas (depth 1).
+15. **Live changes never unfold**: a change inside a folded branch pulses the nearest card on screen and updates its
+    badge; "Open" on the toast, the Inbox and "Go to" reveal only the path to the node.
+16. **Zoom and fold do not fight**: fold decides which cards exist; zoom only decides how much a card shows (task
+    lines go below 0.55, cards become status tiles below 0.4).
+17. **Keyboard follows the WAI-ARIA tree pattern**; Space stays hold-to-talk and `/` (newly bound) opens the typed
+    note; React Flow's own Delete/arrow handling is off. Light mode follows the system theme.
+18. **Small models and labels**: with `n1`, `n2` … labels Gemma files more notes right (95.2 %); in the field it
+    still sends vague notes ("Sort out the stuff") to the Inbox. An apparent regression in the end-to-end run was
+    the brain having *learned* those phrases from the test's Inbox answers; Undo now forgets what an Inbox answer
+    taught (decision found and fixed in Stage 4).
 
 ## Consequences
 
