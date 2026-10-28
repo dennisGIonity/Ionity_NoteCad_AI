@@ -7,13 +7,18 @@ from notecad_brain.pipeline import Brain
 from notecad_brain.routers import RouterChain, RulesRouter
 
 
+MADE: list[Brain] = []  # closed after each test by conftest (no leaked SQLite connections)
+
+
 def make_brain(db_url: str = "sqlite:///:memory:", routers=None, **kw) -> Brain:
     s = Settings()
     s.db_url, s.worker, s.audio_dir = db_url, False, kw.pop("audio_dir", "./data/test-audio")
     s.stt_engines = ""  # hermetic: no real Deepgram / Whisper even where they are installed; tests pass a fake
     from notecad_companion.embed import HashEmbedder
-    return Brain(s, routers=routers or RouterChain([RulesRouter()]), embedder=kw.pop("embedder", HashEmbedder(256)),
-                 stt=kw.pop("stt", None), **kw)
+    b = Brain(s, routers=routers or RouterChain([RulesRouter()]), embedder=kw.pop("embedder", HashEmbedder(256)),
+              stt=kw.pop("stt", None), **kw)
+    MADE.append(b)
+    return b
 
 
 def seed_farm(brain: Brain) -> dict:

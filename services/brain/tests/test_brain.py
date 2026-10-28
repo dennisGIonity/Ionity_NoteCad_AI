@@ -161,15 +161,15 @@ def test_validation_rejects_unknown_ids_and_top_level(farm):
     root = ids["root"]
     bad = {"capture_id": "c", "event_index": 0, "summary": "x",
            "actions": [{"type": "append_note", "node_id": "invented", "text": "x", "confidence": 0.9, "evidence": "x"}]}
-    assert check(bad, allowed_ids={ids["pump"]}, root_id=root, node_attrs={}, node_parent={}).gate == "nothing usable"
+    assert check(bad, allowed_ids={ids["pump"]}, root_id=root, node_attrs={}).gate == "nothing usable"
     top = {"capture_id": "c", "event_index": 0, "summary": "x",
            "actions": [{"type": "create_node", "temp_id": "tmp:1", "parent_id": root, "title": "Bees", "kind": "category",
                         "confidence": 0.9, "evidence": "x"}]}
-    assert check(top, allowed_ids={root}, root_id=root, node_attrs={}, node_parent={}).gate == "new top-level category"
+    assert check(top, allowed_ids={root}, root_id=root, node_attrs={}).gate == "new top-level category"
     schema_bad = {"capture_id": "c", "event_index": 0, "summary": "x",
                   "actions": [{"type": "set_status", "node_id": ids["pump"], "status": "on fire", "reason": "x",
                                "confidence": 0.9, "evidence": "x"}]}
-    assert check(schema_bad, allowed_ids={ids["pump"]}, root_id=root, node_attrs={}, node_parent={}).gate == "schema"
+    assert check(schema_bad, allowed_ids={ids["pump"]}, root_id=root, node_attrs={}).gate == "schema"
 
 
 # ------------------------------------------------------------------ delegation

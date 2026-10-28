@@ -7,6 +7,8 @@ Every route is served under /v1/... and, for the app, also under /api/v1/... (sa
 from __future__ import annotations
 
 import asyncio
+import hmac
+import logging
 import threading
 from contextlib import asynccontextmanager
 import time
@@ -22,6 +24,8 @@ from .common import PROVENANCE
 from .config import Settings
 from .graph import GraphError
 from .pipeline import AUDIO_EXT, Brain
+
+log = logging.getLogger("notecad.brain")
 
 AUDIO_TYPES = set(AUDIO_EXT) | {"application/ogg"}
 EXT_TYPES = {".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg", ".opus": "audio/ogg", ".oga": "audio/ogg",
@@ -106,12 +110,19 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     @asynccontextmanager
     async def lifespan(_app):
         if settings.worker:  # background worker: queued captures are processed while the phone waits on events
+            brain.recover_jobs()  # captures a killed brain left half done
+
             def loop():
+                next_decay = 0.0
                 while not stop.is_set():
                     try:
+                        if time.monotonic() >= next_decay:  # info rings and done marks fade without anyone asking
+                            next_decay = time.monotonic() + 600
+                            brain.decay_all()
                         if brain.run_jobs() == 0:
                             stop.wait(0.5)
                     except Exception:
+                        log.exception("worker loop")
                         stop.wait(2)
             threading.Thread(target=loop, name="notecad-worker", daemon=True).start()
         warm = getattr(brain.stt, "warm", None)
@@ -148,14 +159,33 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     def is_local(request: Request) -> bool:
         return bool(request.client) and request.client.host in LOOPBACK
 
+    allowed_origins = set(origins)
+
+    def token_ok(request: Request) -> bool:
+        if not settings.api_token:
+            return False
+        want = settings.api_token.encode()
+        hdr = (request.headers.get("authorization") or "").encode()
+        if hmac.compare_digest(hdr, b"Bearer " + want):
+            return True
+        q = request.query_params.get("token")  # only where a header cannot be set: EventSource, <audio src>
+        return request.method in ("GET", "HEAD") and q is not None and hmac.compare_digest(q.encode(), want)
+
     def check_auth(request: Request) -> None:
         """This PC is trusted (the desktop app needs no token); phones and other workers on the LAN send the token
-        as a Bearer header, or ?token= where a header cannot be set (EventSource). Plain HTTP: LAN or VPN only."""
+        as a Bearer header, or ?token= on a GET where a header cannot be set (EventSource). Plain HTTP: LAN or VPN
+        only. A web page open on this PC is not trusted: a change sent from a browser origin that is not one of
+        NoteCad's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it)."""
+        origin = request.headers.get("origin")
+        foreign = (origin is not None and origin not in allowed_origins
+                   and request.method not in ("GET", "HEAD", "OPTIONS"))
+        if token_ok(request):
+            return
+        if foreign:
+            raise HTTPException(403, "this origin may not change NoteCad without the token")
         if not settings.api_token or (settings.trust_loopback and is_local(request)):
             return
-        hdr = request.headers.get("authorization")
-        if hdr != f"Bearer {settings.api_token}" and request.query_params.get("token") != settings.api_token:
-            raise HTTPException(401, "missing or wrong token")
+        raise HTTPException(401, "missing or wrong token")
 
     def auth(request: Request) -> None:
         check_auth(request)
@@ -349,8 +379,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         return brain.mindmap(ws_ok(ws), tasks=tasks, notes_per_node=notes)
 
     # ---------------------------------------------------------------- one capture endpoint (Phase 2)
-    @r.post("/v1/workspaces/{ws}/capture", dependencies=A)
-    async def capture_any(ws: str, request: Request):
+    async def _capture_any(ws: str, request: Request):
         """multipart/form-data (file or audio = WAV / WebM / Opus / Ogg / MP3 / M4A, and/or text, context_node_id,
         capture_id, recorded_at, source, lang_hint, wait), application/json (same fields), or a raw audio/* body
         (fields as query parameters). context_node_id: the node open on the map while recording; it and its
@@ -361,6 +390,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         audio = mime = None
         if ctype in ("multipart/form-data", "application/x-www-form-urlencoded"):
             form = await request.form()
+            request.state.form = form  # closed below: its temp files are released at once
             for key, val in form.multi_items():
                 if hasattr(val, "read"):  # an uploaded file
                     if key in ("file", "audio") and audio is None:
@@ -416,6 +446,19 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                 raise HTTPException(422 if "STTError" in type(ex).__name__ else 500, f"{type(ex).__name__}: {ex}")
             return {**res, **links}
         return JSONResponse({**reg, **links}, status_code=202)
+
+    @r.post("/v1/workspaces/{ws}/capture", dependencies=A)
+    async def capture_any(ws: str, request: Request):
+        """multipart/form-data (file or audio = WAV / WebM / Opus / Ogg / MP3 / M4A, and/or text, context_node_id,
+        capture_id, recorded_at, source, lang_hint, wait), application/json (same fields), or a raw audio/* body
+        (fields as query parameters). context_node_id: the node open on the map while recording; it and its
+        neighbours are preferred when the brain decides where the note goes."""
+        try:
+            return await _capture_any(ws, request)
+        finally:
+            form = getattr(request.state, "form", None)
+            if form is not None:
+                await form.close()
 
     @r.get("/v1/workspaces/{ws}/sync", dependencies=A)
     def sync(ws: str):
@@ -479,6 +522,8 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
         async def gen():
             sent, last = 0, start or 0
+            if last > brain.broker.last_id:  # an id this brain never sent (it restarted): everything new is wanted
+                last = 0
             try:
                 yield "retry: 2000\n\n"
                 backlog = brain.broker.since(ws, start) if start is not None else []

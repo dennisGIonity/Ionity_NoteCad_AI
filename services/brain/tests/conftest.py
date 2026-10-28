@@ -39,3 +39,15 @@ def farm(request):
     else:
         b = make_brain()
         yield b, seed_farm(b)
+
+
+@pytest.fixture(autouse=True)
+def _close_brains():
+    yield
+    from farm import MADE
+    while MADE:
+        b = MADE.pop()
+        try:
+            b.close()
+        except Exception:  # already closed by the test (Postgres fixture)
+            pass

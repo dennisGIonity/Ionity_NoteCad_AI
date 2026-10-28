@@ -125,6 +125,10 @@ class Brain:
             onboarding_llm = OpenAICompatLLM(self.settings.local_base_url, self.settings.local_model, timeout=120)
         self.onboarding_llm = onboarding_llm
 
+    def close(self) -> None:
+        self.sync.stop()
+        self.db.close()
+
     # ================================================================ capture in
     def register_capture(self, ws: str, *, text: str | None = None, audio: bytes | None = None, mime: str | None = None,
                          capture_id: str | None = None, recorded_at: str | None = None, source: str = "phone",
@@ -255,8 +259,7 @@ class Brain:
                 # 5 validate
                 allowed = {c["node_id"] for c in cands} | {s["node_id"] for s in spine}
                 attrs = {c["node_id"]: c.get("attributes") or {} for c in cands}
-                parents = {c["node_id"]: c.get("parent_id") for c in cands}
-                checked = check(payload, allowed_ids=allowed, root_id=root_id, node_attrs=attrs, node_parent=parents)
+                checked = check(payload, allowed_ids=allowed, root_id=root_id, node_attrs=attrs)
                 row = {"capture_id": cid, "idx": idx, "text": ev,
                        "candidates": [{k: c[k] for k in ("node_id", "path", "score", "via")} for c in cands],
                        "routed": payload, "router": router_name,
@@ -265,14 +268,15 @@ class Brain:
                     # Inbox: the owner decides; the proposal is kept so one tap applies it
                     opts = checked.options or [{"label": c["path"], "node_id": c["node_id"]} for c in cands[:3]]
                     inbox_id = new_id()
-                    self.db.insert("inbox", {"id": inbox_id, "workspace_id": ws, "capture_id": cid, "event_idx": idx,
-                                             "question": checked.question or f'Where should this go? "{ev}"',
-                                             "options": opts, "event_text": ev,
-                                             "proposal": {"actions": checked.actions, "reason": checked.gate,
-                                                          "errors": checked.errors, "router": router_name},
-                                             "state": "open", "resolution": None, "created_at": now_iso(),
-                                             "resolved_at": None})
-                    self._upsert_event(row, "needs_review")
+                    with self.db.tx():  # one transaction: a retry after a crash must not ask twice
+                        self.db.insert("inbox", {"id": inbox_id, "workspace_id": ws, "capture_id": cid, "event_idx": idx,
+                                               "question": checked.question or f'Where should this go? "{ev}"',
+                                               "options": opts, "event_text": ev,
+                                               "proposal": {"actions": checked.actions, "reason": checked.gate,
+                                                            "errors": checked.errors, "router": router_name},
+                                               "state": "open", "resolution": None, "created_at": now_iso(),
+                                               "resolved_at": None})
+                        self._upsert_event(row, "needs_review")
                     self.broker.publish(ws, "inbox.created", {
                         "capture_id": cid, "idx": idx, "inbox_id": inbox_id, "text": ev, "reason": checked.gate,
                         "question": checked.question or f'Where should this go? "{ev}"', "options": opts,
@@ -414,6 +418,20 @@ class Brain:
                 "router": cap["router"], "context_node_id": cap.get("anchor_node_id"), "events": evs}
 
     # ================================================================ worker
+    def recover_jobs(self) -> int:
+        """A brain killed mid-capture leaves its job 'running' and the capture half done; queue them again."""
+        return self.db.execute("update jobs set state='queued' where state='running'")
+
+    def decay_all(self) -> int:
+        """Fade stored info / done statuses in every workspace (graph.decay) and tell the maps."""
+        total = 0
+        for w in self.db.query("select id from workspaces"):
+            n = self.graph.decay(w["id"])
+            if n:
+                self.broker.publish(w["id"], "node.updated", {"reason": "decay", "count": n})
+                total += n
+        return total
+
     def run_jobs(self, limit: int = 10) -> int:
         n = 0
         for job in self.db.query("select * from jobs where state='queued' and run_after<=? order by created_at limit ?",

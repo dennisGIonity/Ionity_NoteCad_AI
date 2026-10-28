@@ -18,16 +18,28 @@ import asyncio
 import itertools
 import json
 import threading
+import time
 from collections import deque
 
 from .common import now_iso
+
+
+def _offer(q: asyncio.Queue, msg: dict) -> None:
+    """Runs on the subscriber's loop: a client too slow to drain 1,000 events misses some (it can resync with
+    Last-Event-ID) rather than raising inside the event loop."""
+    try:
+        q.put_nowait(msg)
+    except asyncio.QueueFull:
+        pass
 
 
 class Broker:
     def __init__(self, history: int = 500):
         self._subs: list[tuple[str, asyncio.AbstractEventLoop, asyncio.Queue]] = []
         self._lock = threading.Lock()
-        self._ids = itertools.count(1)
+        # ids start at this boot's clock (ms), so a client that reconnects after a restart with an old Last-Event-ID
+        # is behind the new ids, never ahead of them (ids restarting at 1 made the desktop drop every new event)
+        self._ids = itertools.count(int(time.time() * 1000))
         self.recent: deque = deque(maxlen=history)
 
     @property
@@ -52,14 +64,17 @@ class Broker:
         for sws, loop, q in subs:
             if sws == ws:
                 try:
-                    loop.call_soon_threadsafe(q.put_nowait, msg)
-                except (RuntimeError, asyncio.QueueFull):
+                    loop.call_soon_threadsafe(_offer, q, msg)
+                except RuntimeError:  # that client's loop is gone
                     pass
         return msg
 
     def since(self, ws: str, last_id: int) -> list[dict]:
-        """What a reconnecting client missed (Last-Event-ID), oldest first."""
+        """What a reconnecting client missed (Last-Event-ID), oldest first. An id from the future (another brain,
+        or a clock set back) means nothing here is known to be missed."""
         with self._lock:
+            if self.recent and last_id > self.recent[-1]["id"]:
+                return []
             return [m for m in self.recent if m["workspace_id"] == ws and m["id"] > last_id]
 
     def of(self, ws: str, capture_id: str | None = None) -> list[dict]:

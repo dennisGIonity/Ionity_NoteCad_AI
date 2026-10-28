@@ -45,8 +45,7 @@ def _clean(a: dict) -> dict:
     return keep
 
 
-def check(payload: dict, *, allowed_ids: set[str], root_id: str, node_attrs: dict[str, dict],
-          node_parent: dict[str, str | None]) -> Checked:
+def check(payload: dict, *, allowed_ids: set[str], root_id: str, node_attrs: dict[str, dict]) -> Checked:
     out = Checked()
     payload = dict(payload)
     payload["actions"] = [_clean(a) for a in payload.get("actions", []) if isinstance(a, dict)]

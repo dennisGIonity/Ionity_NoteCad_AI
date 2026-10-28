@@ -144,6 +144,12 @@ class Applier:
         return eid
 
     # ================================================================ undo
+    def _used_later(self, node_id: str) -> bool:
+        """This capture's own rows on the node are already gone (Undo runs newest first), so anything left on it
+        came from later captures or the owner, and deleting the node would take those with it."""
+        return any(self.db.one(f"select 1 from {t} where {c}=? limit 1", (node_id,)) for t, c in
+                   (("nodes", "parent_id"), ("notes", "node_id"), ("tasks", "node_id"), ("alerts", "node_id")))
+
     def undo(self, ws: str, capture_id: str) -> int:
         rows = self.db.query("select * from action_log where workspace_id=? and capture_id=? and undone_at is null "
                              "order by event_idx desc, seq desc", (ws, capture_id))
@@ -160,7 +166,9 @@ class Applier:
                     self.db.execute(f"delete from {inv['table']} where id=?", (inv["id"],))
                 elif op == "delete_node":
                     n = self.graph.node(inv["id"])
-                    if n:
+                    if n and self._used_later(inv["id"]):
+                        touched.add(inv["id"])  # a later note, task or child lives on it: keep the node
+                    elif n:
                         if n["parent_id"]:
                             touched.add(n["parent_id"])
                         self.db.execute("delete from nodes where id=?", (inv["id"],))

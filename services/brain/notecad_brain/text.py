@@ -41,7 +41,8 @@ def _words_to_int(words: list[str]) -> int | None:
     return total + current if seen else None
 
 
-NUMBER_ONE = re.compile(r"\b(number|nommer|no\.?|nr\.?)\s+(?:one|een)\b", re.I)
+# "no." needs its dot: "No one fed the dogs" is not unit number 1
+NUMBER_ONE = re.compile(r"\b(number|nommer|no\.|nr\.?)\s+(?:one|een)\b", re.I)
 
 
 def normalise(text: str) -> str:
@@ -120,6 +121,10 @@ WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 
             "maandag": 0, "dinsdag": 1, "woensdag": 2, "donderdag": 3, "vrydag": 4, "saterdag": 5, "sondag": 6}
 
 
+# "more" is Afrikaans môre (tomorrow) only in an Afrikaans sentence; in English it is "need more diesel"
+AFRIKAANS = re.compile(r"\b(die|het|moet|nie|ons|ek|vir|van|sal|om|dis|asseblief)\b", re.I)
+
+
 def parse_due(text: str, ref: datetime, tz: str = "Africa/Johannesburg") -> str | None:
     """Explicit due words only (router rule 5). Returns ISO-8601 UTC or None."""
     t = (text or "").lower()
@@ -128,7 +133,7 @@ def parse_due(text: str, ref: datetime, tz: str = "Africa/Johannesburg") -> str 
     day = None
     if re.search(r"\b(day after tomorrow|oormôre|oormore)\b", t):
         day = local + timedelta(days=2)
-    elif re.search(r"\b(tomorrow|môre|more)\b", t):
+    elif re.search(r"\b(tomorrow|môre)\b", t) or (re.search(r"\bmore\b", t) and AFRIKAANS.search(t)):
         day = local + timedelta(days=1)
     elif re.search(r"\b(today|tonight|vandag|vanaand|asap|immediately|dadelik|nou dadelik)\b", t):
         day = local
@@ -154,9 +159,10 @@ def parse_due(text: str, ref: datetime, tz: str = "Africa/Johannesburg") -> str 
 
 
 # ---------------------------------------------------------------- problem words (rules router, severity)
-CRITICAL = re.compile(r"\b(burst|broke(?:n)?|collapsed?|fire|smoke|bleeding|down|dead|died|dying|stolen|flood(?:ing)?|"
+# "down" only as a state ("pump is down", "broke down"), never "sit down"; "brand" (Afrikaans fire) never "brand new"
+CRITICAL = re.compile(r"\b(burst|broke(?:n)?|collapsed?|fire|smoke|bleeding|(?:is|are|was|were|went|goes|gone|broke|been)\s+down|dead|died|dying|stolen|flood(?:ing)?|"
                       r"leaking badly|no water|no power|unsafe|injured badly|can'?t walk|stopped|"
-                      r"gebars|gebreek|dood|brand|gesteel|geen water|geen krag|lek baie erg|erg)\b", re.I)
+                      r"gebars|gebreek|dood|brand(?!\s+new)|gesteel|geen water|geen krag|lek baie erg|erg)\b", re.I)
 WARNING = re.compile(r"\b(leak(?:s|ing)?|lek|injur(?:ed|y)|lame|limp(?:ing)?|sick|siek|low|laag|worn|noise|noisy|"
                      r"overdue|late|missing|weg|loose|los|crack(?:ed)?|fault|faulty|problem|probleem|broken)\b", re.I)
 DONE = re.compile(r"\b(finished|completed|done|fixed|repaired|klaar|voltooi|reggemaak)\b", re.I)

@@ -31,7 +31,7 @@ def _fuzzy(event: str, names: list[tuple[str, float]]) -> float:
     """How well the owner's words name this node. A whole-phrase hit scores highest; otherwise every word of the
     name has to be heard (close spelling allowed), so 'Health Alerts' does not match 'healthy'."""
     ev = event.lower()
-    ev_clean = f" {re.sub(r'[^\w\s]', ' ', ev)} "
+    ev_clean = " " + re.sub(r"[^\w\s]", " ", ev) + " "
     ev_toks = [t for t in _TOK.findall(ev) if len(t) >= 3]
     best = 0.0
     for name, weight in names:
