@@ -32,8 +32,8 @@ test('an employee who joins never sees Financials', async ({ browser, page, requ
   phone.on('dialog', (d) => { seen.push(d.message()); void d.accept() })
   const sent: string[] = []
   phone.on('response', async (r) => { if (r.url().includes('/mindmap')) sent.push(await r.text().catch(() => '')) })
-  await phone.goto(`./?join=${encodeURIComponent(link)}`)
-  await phone.waitForURL((u) => !u.search.includes('join'))
+  await phone.goto(`./#join=${encodeURIComponent(link)}`)
+  await phone.waitForURL((u) => !u.hash.includes('join') && !u.search.includes('join'))
   expect(seen[0]).toContain('as employee')
   const token = await phone.evaluate(() => localStorage.getItem('notecad.token'))
   expect(token).toMatch(/^nct_/)

@@ -40,7 +40,7 @@ export function parseJoinLink(link: string): { url: string; code: string; ws: st
   return { url, code, ws: p.get('w') || '' }
 }
 
-/** Join with an invite (?join=<link>): the brain says what it is, the person confirms, then this computer keeps its
+/** Join with an invite (#join=<link>): the brain says what it is, the person confirms, then this computer keeps its
  *  own device token (a shared office PC, run with NC_BRAIN_TRUST_LOOPBACK=0). The code works once. */
 export async function joinFromLink(link: string, confirm: (text: string) => boolean = window.confirm): Promise<string | null> {
   const j = parseJoinLink(link)

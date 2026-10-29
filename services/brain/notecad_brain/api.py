@@ -994,7 +994,10 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         return [str(request.base_url).rstrip("/")]
 
     def throttle(request: Request) -> None:
-        """The join routes need no token: at most 10 tries a minute from one address."""
+        """The join routes need no token: at most 10 tries a minute from one address on the network (guessing a code).
+        This PC, trusted without a token anyway, is not counted."""
+        if settings.trust_loopback and is_local(request):
+            return
         ip = request.client.host if request.client else "?"
         now = time.monotonic()
         recent = [t for t in joins.get(ip, []) if now - t < 60]

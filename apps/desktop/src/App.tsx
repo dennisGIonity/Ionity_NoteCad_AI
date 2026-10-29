@@ -24,7 +24,9 @@ export default function App() {
   const init = useApp((s) => s.init)
 
   useEffect(() => {
-    const join = new URLSearchParams(location.search).get('join')  // an invite for this computer (ADR 0014)
+    // an invite for this computer (ADR 0014), in the #fragment: a fragment never reaches a server, a log or a Referer
+    // (POPIA review). ?join= still works for links from before. Either is dropped from the address once joined.
+    const join = new URLSearchParams(location.hash.slice(1)).get('join') ?? new URLSearchParams(location.search).get('join')
     if (!join) { void init(); return }
     void joinFromLink(join).then((err) => {
       if (err) window.alert(err)
