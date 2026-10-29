@@ -9,6 +9,27 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## POPIA: the five high-priority fixes (29 October 2026)
+
+`docs\compliance\Ionity_NoteCad_POPIA_Assessment_v1.0` (technical, not legal advice) found NoteCad not yet compliant in
+four areas and listed twelve fixes. The five high ones are built:
+
+| # | Finding | What changed |
+|---|---|---|
+| 1 | No retention limit (s14) | `retention.py`: per-workspace periods for recordings, transcripts and the activity log, set by an owner in the privacy notice (nothing is deleted until then); the worker purges every 6 hours; `NC_BRAIN_ARCHIVE_DAYS` for `data\archive` |
+| 2 | Deleted data lived on in the sync journal and archives (s14, s24) | each purge keeps only the newest change per row in `sync_changes`; deleting a workspace leaves only data-less tombstones and clears `view_changes`, `sync_conflicts`, `sync_rejects` |
+| 3 | Device tokens in the access log (s19) | `POST /v1/tickets`: a 10-minute ticket in EventSource and audio URLs instead of the token; `serve.py` writes `api.log` weekly, 4 weeks kept, with tokens, tickets and invite codes blanked |
+| 4 | Plain HTTP on the farm network (s19) | `serve.py --lan`: plain HTTP on loopback only, HTTPS on :9788 with the brain's own certificate (`tls.py`), its SHA-256 in pairing and invite links; Android trusts only that certificate (`TlsPin`, WebView and uploads) and allows no cleartext but localhost |
+| 5 | No privacy notice (s18) | migration 9 / Supabase 0009; `GET|PUT .../privacy`, `POST .../privacy/ack`; the desktop notice (owner sets the contact and periods and accepts; "Not now" for a day) and the phone sheet (each member reads it once) |
+
+**Verified.** Brain 182 tests on SQLite (13 new in `test_popia.py`), companion 47, desktop 40, phone 10 (with the new
+pinning test), on this PC; a test brain with `--lan` answered pinned HTTPS on the LAN address, refused plain HTTP there,
+and an unpinned client was refused. Android (`TlsPinTest`) and Postgres run in CI.
+
+**Open.** Phones paired over plain HTTP must pair again (the app says so). The WebView's pinning is not yet tried on a
+real phone. The other seven findings of the report (per-person export and erasure, BitLocker check, Keystore token,
+security headers, the cloud-transfer gate, the loopback note, Information Officer and the documents) are still open.
+
 ## Roles, seats and permission-aware sync (ADR 0014, 29 October 2026)
 
 One business, one map, many people: owner (1), manager (2), employee (3), and the system (0). Restricted branches
