@@ -45,6 +45,30 @@ def keyterms(brain: str, ws: str) -> list[str]:
         return FARM_TERMS
 
 
+SHOWCASE = ["Wheel needs changing on tractor model John Deere 9550 - number 1",
+            "Today I planted field south 704 to 708", "Ask Sipho to check the water pump on the North borehole"]
+
+
+def english_rows() -> list[tuple[Path, str]]:
+    """The three showcase recordings and the English golden notes spoken by a Windows voice (data/samples/golden-en)."""
+    samples = ROOT / "data" / "samples"
+    out = [(samples / "showcase" / f"showcase_{i + 1}.wav", t) for i, t in enumerate(SHOWCASE)]
+    refs = samples / "golden-en" / "refs.json"
+    if refs.exists():
+        out += [(refs.parent / r["file"], r["text"]) for r in json.loads(refs.read_text(encoding="utf-8-sig"))]
+    return [(p, t) for p, t in out if p.exists()]
+
+
+def vram() -> int | None:
+    import subprocess
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=10)
+        return int(r.stdout.split()[0])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
 def norm(s: str) -> list[str]:
     s = s.lower().replace("’", "'")
     s = re.sub(r"[^\w'\- ]+", " ", s)  # keep 'n and hyphenated words, as FLEURS' normalised text does
@@ -67,7 +91,10 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=120)
     ap.add_argument("--brain", default="http://127.0.0.1:8788")
     ap.add_argument("--ws", default="showcase")
-    ap.add_argument("--only", default="", help="comma list of settings to run")
+    ap.add_argument("--only", default="", help="settings to run, by part of their name, separated by ; (names hold commas)")
+    ap.add_argument("--model", help="Whisper model (default: the brain's NC_BRAIN_WHISPER_MODEL)")
+    ap.add_argument("--english", action="store_true",
+                    help="also English: the showcase notes and data/samples/golden-en (the brain's way of calling)")
     ap.add_argument("--out")
     a = ap.parse_args()
 
@@ -88,10 +115,15 @@ def main() -> None:
     from faster_whisper import WhisperModel
     models: dict[str, WhisperModel] = {}
 
+    name_of_model = a.model or s.whisper_model
+    loaded: dict[str, float] = {}
+
     def model(compute: str) -> WhisperModel:
         if compute not in models:
-            models[compute] = WhisperModel(s.whisper_model, device="cuda", compute_type=compute,
+            t0 = time.perf_counter()
+            models[compute] = WhisperModel(name_of_model, device="cuda", compute_type=compute,
                                            download_root=s.whisper_dir)
+            loaded[compute] = round(time.perf_counter() - t0, 1)
         return models[compute]
 
     # name: (language, prompt, compute, beam, Dutch-means-Afrikaans)
@@ -100,29 +132,38 @@ def main() -> None:
         "detect, no prompt": (None, None, "float16", 5, False),
         "detect, nl->af, English prompt": (None, en_prompt, "float16", 5, True),
         "detect af or en, English prompt": (("af", "en"), en_prompt, "float16", 5, False),
+        "detect af or en, prompt in that language": (("af", "en"), {"en": en_prompt, "af": af_prompt}, "float16", 5,
+                                                     False),
         "af, English prompt": ("af", en_prompt, "float16", 5, False),
         "af, no prompt": ("af", None, "float16", 5, False),
         "af, Afrikaans prompt": ("af", af_prompt, "float16", 5, False),
         "af, Afrikaans prompt, int8_float16": ("af", af_prompt, "int8_float16", 5, False),
         "af, Afrikaans prompt, beam 1": ("af", af_prompt, "float16", 1, False),
     }
-    only = [x.strip() for x in a.only.split(",") if x.strip()]
+    only = [x.strip() for x in a.only.split(";") if x.strip()]
     results = {}
+    sets = {name: rows for name in settings if not only or any(o in name for o in only)}
+    if a.english:  # the brain's ways of calling must not cost English notes anything
+        for base in ("detect af or en, English prompt", "detect af or en, prompt in that language"):
+            sets["English: " + base] = english_rows()
+            settings["English: " + base] = settings[base]
     for name, (lang, prompt, compute, beam, nl_af) in settings.items():
-        if only and not any(o in name for o in only):
+        if name not in sets:
             continue
+        clips = sets[name]
         m = model(compute)
         errs = words = 0
         langs: Counter[str] = Counter()
         took, english = [], 0
-        for wav, ref in rows:
+        for wav, ref in clips:
             t0 = time.perf_counter()
             use = lang
             if isinstance(lang, tuple):  # the owner's languages only: the best of those, never Icelandic or Dutch
                 from faster_whisper import decode_audio
                 _, _, probs = m.detect_language(decode_audio(str(wav)), vad_filter=True)
                 use = max((p for p in probs if p[0] in lang), key=lambda p: p[1], default=(lang[0], 0))[0]
-            segs, info = m.transcribe(str(wav), language=use, vad_filter=True, initial_prompt=prompt, beam_size=beam)
+            said = prompt.get(use or "en", prompt["en"]) if isinstance(prompt, dict) else prompt
+            segs, info = m.transcribe(str(wav), language=use, vad_filter=True, initial_prompt=said, beam_size=beam)
             hyp = " ".join(x.text.strip() for x in segs)
             if nl_af and info.language == "nl":
                 segs, info2 = m.transcribe(str(wav), language="af", vad_filter=True, initial_prompt=prompt,
@@ -138,8 +179,8 @@ def main() -> None:
         results[name] = {"wer_pct": wer, "detected": dict(langs.most_common()), "s_per_clip_p50": round(statistics.median(took), 3)}
         print(f"{name:42s} WER {wer:5.1f} %   detected {dict(langs.most_common(4))}   {results[name]['s_per_clip_p50']} s/clip",
               flush=True)
-    out = {"dataset": "google/fleurs af_za test", "clips": len(rows), "model": s.whisper_model, "keyterms": len(terms),
-           "results": results}
+    out = {"dataset": "google/fleurs af_za test", "clips": len(rows), "model": name_of_model, "keyterms": len(terms),
+           "load_s": loaded, "vram_used_mib_after_load": vram(), "results": results}
     if a.out:
         Path(a.out).write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
 

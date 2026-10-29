@@ -131,7 +131,19 @@ class WhisperSTT:
         segments, _ = self._load().transcribe(samples, language="en", vad_filter=False)
         list(segments)
 
-    def _run(self, audio: bytes, lang: str | None, prompt: str | None):
+    # A punctuated sentence: a bare comma list makes Whisper drop punctuation, and then events do not split.
+    # In the language of the note: on Afrikaans speech the English sentence cost 2 (turbo) to 7 (large-v3) points of
+    # WER on FLEURS af_za, and English notes lost nothing (docs/perf/afrikaans-wer.json).
+    PROMPTS = {"en": "Farm notes about {terms}. Ask Sipho to check it before Friday.",
+               "af": "Plaasnotas oor {terms}. Vra Sipho om dit voor Vrydag na te gaan."}
+
+    @classmethod
+    def prompt_for(cls, keyterms: list[str], lang: str | None) -> str | None:
+        if not keyterms:
+            return None
+        return cls.PROMPTS.get(lang or "en", cls.PROMPTS["en"]).format(terms=", ".join(keyterms[:60]))
+
+    def _run(self, audio: bytes, lang: str | None, keyterms: list[str]):
         import io
         model = self._load()
         source: Any = io.BytesIO(audio)
@@ -141,7 +153,8 @@ class WhisperSTT:
             lang = self._pick_language(model, source)
         elif lang is None and self.languages:
             lang = self.languages[0]
-        segments, info = model.transcribe(source, language=lang, vad_filter=True, initial_prompt=prompt)
+        segments, info = model.transcribe(source, language=lang, vad_filter=True,
+                                          initial_prompt=self.prompt_for(keyterms, lang))
         return list(segments), info
 
     def _pick_language(self, model, samples) -> str | None:
@@ -154,16 +167,14 @@ class WhisperSTT:
 
     def transcribe(self, audio, *, mime, lang_hint, keyterms):
         lang = (lang_hint or "").split("-")[0] or None
-        # a punctuated sentence: a bare comma list makes Whisper drop punctuation, and then events do not split
-        prompt = f"Farm notes about {', '.join(keyterms[:60])}. Ask Sipho to check it before Friday." if keyterms else None
         try:
-            segs, info = self._run(audio, lang, prompt)
+            segs, info = self._run(audio, lang, keyterms)
         except (RuntimeError, OSError) as ex:
             # "auto" picks CUDA when a GPU is present, but cuBLAS / cuDNN may not be installed: use the CPU instead
             if self.device == "cpu" or not any(w in str(ex).lower() for w in ("cuda", "cublas", "cudnn", "dll")):
                 raise
             self.device, self.compute_type, self._model = "cpu", "int8", None
-            segs, info = self._run(audio, lang, prompt)
+            segs, info = self._run(audio, lang, keyterms)
         text = " ".join(s.text.strip() for s in segs).strip()
         conf = None
         if segs:

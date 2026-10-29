@@ -78,5 +78,170 @@
       "s_per_clip_p50": 0.404
     }
   },
-  "note": "RTX 4060, float16 unless named; WER on FLEURS' normalised text. 'detect af or en' is the brain's behaviour from NC_BRAIN_STT_LANGUAGES=en,af (default)."
+  "note": "First run: large-v3-turbo, stack running, the English prompt built from the showcase map (33 keyterms). 'detect af or en' is NC_BRAIN_STT_LANGUAGES=en,af.",
+  "model_comparison": {
+    "conditions": "Stack stopped (Gemma + EmbeddingGemma still loaded in Ollama), the tool's 15 fallback farm terms in every prompt, RTX 4060, float16. English: the 3 showcase recordings + 16 golden notes spoken by the Windows voice Microsoft Hazel (data/samples/golden-en).",
+    "brain_now": "detect af or en, prompt in that language (stt.py PROMPTS)",
+    "large-v3-turbo": {
+      "load_s": {
+        "float16": 3.2,
+        "int8_float16": 4.4
+      },
+      "vram_used_mib_after_load": 6967,
+      "vram_used_mib_before_load": 3841,
+      "results": {
+        "detect, no prompt": {
+          "wer_pct": 36.3,
+          "detected": {
+            "af": 109,
+            "en": 6,
+            "is": 4,
+            "nl": 1
+          },
+          "s_per_clip_p50": 0.72
+        },
+        "detect, nl->af, English prompt": {
+          "wer_pct": 36.6,
+          "detected": {
+            "af": 109,
+            "en": 6,
+            "is": 4,
+            "nl": 1
+          },
+          "s_per_clip_p50": 0.739
+        },
+        "detect af or en, English prompt": {
+          "wer_pct": 36.8,
+          "detected": {
+            "af": 109,
+            "en": 11
+          },
+          "s_per_clip_p50": 0.792
+        },
+        "af, English prompt": {
+          "wer_pct": 37.2,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.477
+        },
+        "af, no prompt": {
+          "wer_pct": 33.6,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.476
+        },
+        "af, Afrikaans prompt": {
+          "wer_pct": 33.4,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.47
+        },
+        "af, Afrikaans prompt, int8_float16": {
+          "wer_pct": 33.7,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.467
+        },
+        "af, Afrikaans prompt, beam 1": {
+          "wer_pct": 34.0,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.416
+        },
+        "English: detect af or en, English prompt": {
+          "wer_pct": 6.1,
+          "detected": {
+            "en": 19
+          },
+          "s_per_clip_p50": 0.644
+        },
+        "detect af or en, prompt in that language": {
+          "wer_pct": 34.7,
+          "detected": {
+            "af": 109,
+            "en": 11
+          },
+          "s_per_clip_p50": 0.796
+        },
+        "English: detect af or en, prompt in that language": {
+          "wer_pct": 6.1,
+          "detected": {
+            "en": 19
+          },
+          "s_per_clip_p50": 0.633
+        }
+      }
+    },
+    "large-v3": {
+      "load_s": {
+        "float16": 4.0,
+        "int8_float16": 7.2
+      },
+      "vram_used_mib_after_load": 7220,
+      "vram_used_mib_before_load": 3853,
+      "results": {
+        "detect af or en, English prompt": {
+          "wer_pct": 38.9,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 1.275
+        },
+        "af, no prompt": {
+          "wer_pct": 32.9,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 0.988
+        },
+        "af, Afrikaans prompt": {
+          "wer_pct": 32.2,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 1.059
+        },
+        "af, Afrikaans prompt, int8_float16": {
+          "wer_pct": 32.3,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 1.455
+        },
+        "af, Afrikaans prompt, beam 1": {
+          "wer_pct": 33.2,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 1.014
+        },
+        "English: detect af or en, English prompt": {
+          "wer_pct": 2.8,
+          "detected": {
+            "en": 19
+          },
+          "s_per_clip_p50": 0.886
+        },
+        "detect af or en, prompt in that language": {
+          "wer_pct": 32.2,
+          "detected": {
+            "af": 120
+          },
+          "s_per_clip_p50": 1.42
+        },
+        "English: detect af or en, prompt in that language": {
+          "wer_pct": 2.8,
+          "detected": {
+            "en": 19
+          },
+          "s_per_clip_p50": 0.879
+        }
+      }
+    }
+  }
 }

@@ -290,7 +290,7 @@ def test_whisper_falls_back_to_cpu_when_cuda_libraries_are_missing(monkeypatch):
     class Info:
         language = "en"
 
-    def run(audio, lang, prompt):
+    def run(audio, lang, keyterms):
         calls.append(w.device)
         if w.device != "cpu":
             raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
@@ -318,6 +318,29 @@ def test_whisper_only_picks_the_owners_languages():
     assert w._pick_language(Model([("is", 1.0)]), None) is None      # neither: Whisper decides
     assert w._pick_language(Model(None), None) is None               # silence: Whisper decides
     assert WhisperSTT("tiny", languages=[""]).languages == []        # NC_BRAIN_STT_LANGUAGES= turns it off
+
+
+def test_whisper_prompts_in_the_language_of_the_note():
+    # FLEURS af_za: the English keyterm sentence on Afrikaans speech cost 2-7 points of WER
+    from notecad_brain.stt import WhisperSTT
+    w = WhisperSTT("tiny", languages=["en", "af"])
+    seen = []
+
+    class Info:
+        language = "af"
+
+    class Model:
+        def transcribe(self, source, language=None, vad_filter=False, initial_prompt=None):
+            seen.append((language, initial_prompt))
+            return iter([]), Info()
+    w._model = Model()
+    w._run(b"x", "af", ["Field South 704", "Sipho"])
+    w._run(b"x", "en", ["Field South 704"])
+    w._run(b"x", "af", [])
+    assert seen[0] == ("af", "Plaasnotas oor Field South 704, Sipho. Vra Sipho om dit voor Vrydag na te gaan.")
+    assert seen[1] == ("en", "Farm notes about Field South 704. Ask Sipho to check it before Friday.")
+    assert seen[2] == ("af", None)                                     # no keyterms: no prompt
+    assert WhisperSTT.prompt_for(["Pump"], "zu") == "Farm notes about Pump. Ask Sipho to check it before Friday."
 
 
 def test_stt_is_warmed_at_startup(tmp_path):
