@@ -61,7 +61,16 @@ numbers in `docs\perf\`, build history in `docs\BUILD_STATUS.md`.
 Routing details (ADR 0013): Gemma sees short labels (n1, n2 ...) not node ids; plain field-work reports the rules are
 sure of skip the model (`rules:sure`; `NC_BRAIN_RULES_FAST_PATH=0` turns it off). Map fold state is view state in
 `localStorage` (`notecad.fold.<ws>.<layout>`), never synced; `localStorage notecad.layoutEngine=dagre` brings back
-the old layout engine.
+the old layout engine. Speech: the apps send no language hint, so Whisper picks the likeliest of
+`NC_BRAIN_STT_LANGUAGES` (default `en,af`; empty: any language). Afrikaans on large-v3-turbo is about 34-35 % WER on
+FLEURS whatever the settings (`docs\perf\afrikaans-wer.json`).
+
+CI (`.github/workflows/ci.yml`, GitHub Actions on every push; the repo is public, so it is free): brain + companion on
+SQLite and Postgres 17, Supabase 0001-0006 on an empty database, the debug APK + Android unit tests, `cargo check`
+and unsigned Tauri installers. The APK and installers are artifacts of each run. Step logs need a GitHub sign-in; the
+test counts are notices on the run page, and a failing Android build or test writes its cause there too. This is how
+Postgres, Android and Tauri get tested: none of them can be built on this PC (no Postgres, nothing on C:, Smart App
+Control). Android JVM tests (`app\src\test`, Robolectric 4.17) need the `--add-exports` flag in `app\build.gradle`.
 
 ## Showcase and tests
 
@@ -78,12 +87,15 @@ cd services\brain
 .venv\Scripts\python.exe tools\seed_synthetic_farm.py         # workspace perf-2000 (2,000 nodes) for map timing
 .venv\Scripts\python.exe tools\profile_capture.py             # where a capture's time goes (real models, in memory)
 .venv\Scripts\python.exe tools\profile_retrieval.py; .venv\Scripts\python.exe tools\perf_probe.py   # retrieval at 2,000 nodes; routes, Gemma, Whisper, VRAM
+.venv\Scripts\python.exe tools\afrikaans_wer.py --n 120 --out ..\..\docs\perf\afrikaans-wer.json   # FLEURS af_za in data\samples\fleurs-af
 cd ..\companion; .venv\Scripts\python.exe -m pytest -q
 cd ..\..\apps\desktop; npm.cmd ci --include=dev; npm.cmd run build
 npm.cmd run lint; npm.cmd test                                # Biome; Vitest (store + packages\core fold)
 npm.cmd run test:e2e                                          # Playwright in the installed Edge, against the running stack
 $env:NC_SHOTS=1; npx.cmd playwright test e2e/fold.spec.ts     # also writes the fold screenshots to docs\media
 cd ..\mobile; npm.cmd ci --include=dev; npm.cmd run build; npm.cmd run lint; npm.cmd test   # Android APK: apps\mobile\README.md
+npm.cmd run dev   # the phone app in a browser on :5174 (.claude\launch.json "phone-dev"); pair with
+                  # http://localhost:5174/?pair=notecad%3A%2F%2Fpair%3Fu%3Dhttp%3A%2F%2F127.0.0.1%3A8788%26w%3Dshowcase
 ```
 
 The three showcase notes: "Wheel needs changing on tractor model John Deere 9550 - number 1", "Today I planted

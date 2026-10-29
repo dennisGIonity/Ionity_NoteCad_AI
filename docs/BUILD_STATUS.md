@@ -9,6 +9,53 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## Phase 6 follow-up: the open items (29 October 2026)
+
+What Phase 6 left open because WABAKIPI cannot do it (no Postgres, no Rust or Android SDK, nothing on C:, Smart
+App Control blocks self-built binaries) now runs on GitHub: `.github/workflows/ci.yml`, on every push. The repo is
+public, so the runners are free. Step logs need a GitHub sign-in; test counts are notices on each run's page.
+
+**Closed**
+
+| Item | How | Result |
+|---|---|---|
+| Postgres | CI: Postgres 17 service, `NC_BRAIN_TEST_PG_URL` | Brain 158 passed (every `farm` test on SQLite and Postgres, the Postgres sync test included), companion 45 |
+| Supabase 0005-0006 | CI: 0001-0006 in order on an empty database (with `auth.uid()`, the API roles and `supabase_realtime` stubbed) | All apply; `gen_sync_migration.py --check` up to date |
+| Android Java (Phase 6 changes) | CI: `assembleDebug testDebugUnitTest` on JDK 21 | Compiles; debug APK 4.5 MB kept as a run artifact. 12 unit tests pass (was 1, the template's): new `TusUploaderTest` (6, a fake tus server; also run on the plain JDK here) and `OutboxStoreTest` (5, Robolectric 4.17) |
+| Tauri shell | CI (Windows): `cargo check --locked`, `tauri build` | Compiles; unsigned NSIS + MSI installers (5.0 MB) kept as a run artifact |
+| Phone "Record onto" picker | Driven in the browser pane at 375 px | Main areas, one branch at a time, search, pick. Fixed: the brain refused the phone dev server's origin (:5174), and the picker reopened on the last search |
+| Afrikaans speech | `tools\afrikaans_wer.py` on 120 FLEURS af_za clips (`docs\perf\afrikaans-wer.json`) | See below; `NC_BRAIN_STT_LANGUAGES` added |
+
+**Afrikaans, large-v3-turbo on the RTX 4060** (word error rate on FLEURS' normalised text)
+
+| How Whisper is called | WER | Language found | s/clip |
+|---|---|---|---|
+| Before: no hint (the apps send none), English keyterm prompt | 35.5 % | af 109, en 6, is 4, nl 1 | 0.71 |
+| **Now: no hint, picks English or Afrikaans only** (`NC_BRAIN_STT_LANGUAGES=en,af`) | **35.0 %** | af 109, en 11 | 0.74 |
+| Told "af", English prompt / no prompt / Afrikaans prompt | 34.4 / 33.6 / 33.9 % | af 120 | 0.45 |
+| Told "af", int8_float16 / beam 1 | 34.3 / 34.9 % | af 120 | 0.43 / 0.40 |
+
+The prompt, compute type and beam move WER by about a point; the model sets the floor. No Icelandic or Dutch text
+reaches the router any more, and the English showcase recordings stay English.
+
+**Also fixed in CI itself:** on the Windows runner PowerShell checked only the last command of each step (a failing
+lint would have passed); every job now runs bash with `pipefail`. Actions moved to current majors (Node 24). A failing
+Android build or test writes its error and cause chain as annotations, readable without a sign-in. Robolectric on
+Android 16 + JDK 21 needs `--add-exports=java.base/jdk.internal.access=ALL-UNNAMED` (in `app/build.gradle`).
+
+**Verified** (CI run 7, commit `6ebcb03`): brain 158 passed (SQLite + Postgres 17), companion 45, desktop Vitest 29,
+phone Vitest 2, Android unit tests 12, APK and installers built. On WABAKIPI: brain 115 passed / 1 skipped
+(Postgres), phone type-check, Biome and Vitest clean.
+
+**Still open**
+- Claude routing and prompt caching: needs `ANTHROPIC_API_KEY` in `E:\.claude\_vault\notecad.env`.
+- Afrikaans accuracy: about 34-35 % WER on turbo. Next steps to weigh: full large-v3 (3 GB download, slower), or a
+  language switch in the apps that sends `lang_hint=af` (33.6 %, a third faster, but English notes need it off).
+- Code signing: the CI installers and APK are unsigned. Smart App Control will block the Tauri window on WABAKIPI
+  until it is signed; the APK needs a release key for anything beyond sideloading.
+- The APK on a real phone; iOS on a Mac with Xcode 16+.
+- Ollama 0.40.12 (Apple-only changes) and Python 3.14.9 (on C:) left as they are.
+
 ## Phase 6: everything works, faster, current engines, a foldable mind map (28 October 2026)
 
 Decision record: ADR 0013. Plan and findings: `docs\plans\PHASE6.md`. Numbers: `docs\perf\baseline-phase6.md`,
