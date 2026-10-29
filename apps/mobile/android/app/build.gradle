@@ -26,8 +26,10 @@ android {
         unitTests {
             includeAndroidResources = true  // Robolectric: a real Context for OutboxStore in JVM tests
             all { test ->
-                // Robolectric reads FileDescriptor internals; JDK 21 refuses unless java.io is opened to it
-                test.jvmArgs '--add-opens=java.base/java.io=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+                // Robolectric's FileDescriptor interceptor (Android 16's ApplicationSharedMemory) goes through
+                // jdk.internal.access.SharedSecrets, which JDK 21 does not export without this
+                test.jvmArgs '--add-exports=java.base/jdk.internal.access=ALL-UNNAMED',
+                             '--add-opens=java.base/java.io=ALL-UNNAMED'
             }
         }
     }
