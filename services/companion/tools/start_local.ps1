@@ -1,4 +1,4 @@
-# Ionity NoteCad - Companion | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Companion | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 # Starts the companion on a Windows desktop.
@@ -11,7 +11,7 @@
 #   .\tools\start_local.ps1                 start (add -NoApi for the model side only)
 #   .\tools\start_local.ps1 -Stop           stop the companion API (and llama-servers)
 param(
-  [string]$Root    = (Resolve-Path "$PSScriptRoot\..\..\..").Path,   # the NoteCad folder
+  [string]$Root    = (Resolve-Path "$PSScriptRoot\..\..\..").Path,   # the IBMM folder
   [ValidateSet("ollama", "llamacpp")] [string]$Engine = "ollama",
   [string]$Model   = "gemma-4-E2B-it-Q4_K_M.gguf",
   [int]$Ctx = 8192,

@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Which brain this phone talks to: the desktop or the Edge AI Node on the farm's network, with its phone token.

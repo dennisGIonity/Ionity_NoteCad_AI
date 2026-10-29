@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Team & Inbox on the phone (ADR 0014, decision 27): proposals to approve or reject, and an invite to share with a new
@@ -34,7 +34,7 @@ export function TeamSheet({ onClose }: { onClose: () => void }) {
   const share = async () => {
     if (!link) return
     const nav = navigator as Navigator & { share?: Navigator['share'] }
-    if (nav.share) await nav.share({ title: 'NoteCad invite', text: link }).catch(() => undefined)
+    if (nav.share) await nav.share({ title: 'IBMM invite', text: link }).catch(() => undefined)
     else await nav.clipboard?.writeText(link)
   }
 

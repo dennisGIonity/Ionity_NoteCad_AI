@@ -1,10 +1,10 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 -->
 
-# NoteCad desktop
+# IBMM desktop
 
 The transparent voice recorder and the live mind map, on the brain (:8788) and the companion (:8787).
 React 19 + TypeScript + Vite + Tailwind 4 + React Flow 12 (Dagre tree or radial layout); ready for a Tauri v2

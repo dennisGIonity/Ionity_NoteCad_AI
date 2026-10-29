@@ -1,17 +1,17 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
 -->
 
-# NoteCad Master Architecture and Implementation Plan
+# IBMM Master Architecture and Implementation Plan
 
 Document PLAN-0001 · 22 October 2026 · Blueprint ION-ARC-NOTECAD-2026-001 v1.2 · builds on ADR 0007 (companion) and ADR 0008 (brain).
 
 ## 0. Summary
 
-NoteCad already turns a typed or spoken note into notes, tasks, alerts, delegation and status on a graph, with Undo and a companion
+IBMM already turns a typed or spoken note into notes, tasks, alerts, delegation and status on a graph, with Undo and a companion
 that reads the open work. Three things are missing for the product described in the brief:
 
 1. **The graph does not yet understand identities, ranges, progress or reminders.** "John Deere 9550 number 1" becomes a note on

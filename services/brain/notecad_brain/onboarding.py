@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """First run (blueprint 3.3): the owner says what they do; the brain proposes their own top branches.
@@ -59,7 +59,7 @@ SPINE_SCHEMA = {"type": "object", "required": ["persona", "branches"], "properti
                     "kind": {"type": "string", "enum": ["group", "asset", "field", "place", "person", "project", "topic", "channel"]},
                     "aliases": {"type": "array", "items": {"type": "string"}}}}}}}}}}
 
-PROMPT = ("You set up a personal NoteCad map from the owner's own description of their work and life. Propose 3-7 "
+PROMPT = ("You set up a personal IBMM map from the owner's own description of their work and life. Propose 3-7 "
           "top-level categories and under each the specific things they named (their animals, machines, fields, "
           "places, people, projects). Use their own words and names, in their language. Add a 'Maintenance' or "
           "'Health Alerts' channel under groups of machines or animals. Do not invent things they did not mention "

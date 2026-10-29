@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -8,7 +8,7 @@
 
 # POPIA action register
 
-Every action NoteCad takes on personal information, read from the code (routes, spoken commands, background threads, synced tables, app actions). Technical compliance check, not legal advice. Rows that need a person to decide point at [popia-human-actions.md](popia-human-actions.md).
+Every action IBMM takes on personal information, read from the code (routes, spoken commands, background threads, synced tables, app actions). Technical compliance check, not legal advice. Rows that need a person to decide point at [popia-human-actions.md](popia-human-actions.md).
 
 **133 actions: 120 compliant, 13 need a human decision.**
 
@@ -146,4 +146,4 @@ Every action NoteCad takes on personal information, read from the code (routes, 
 | `archive` | files | removed workspaces and backups of data/ | everyone in them | data/archive on this PC | whoever runs the PC | NC_BRAIN_ARCHIVE_DAYS (unset: kept) | s14, s19 | needs human decision | test_old_archives_go_when_the_pc_sets_a_period<br>popia-human-actions.md#archive |
 | `disk` | files | everything in data/ | everyone | the PC's disk | whoever can sign in to the PC | - | s19 | needs human decision | services/start_notecad.ps1<br>popia-human-actions.md#disk |
 | `ci` | files | none (made-up farms in tests) | - | GitHub Actions (public repo) | anyone | 90 days | - | compliant | .github/workflows/ci.yml |
-| `drive` | files | Ionity's own documents (no NoteCad data) | Ionity staff named as authors | Google Drive | Ionity | Ionity's policy | s20-21 | needs human decision | popia-human-actions.md#operators |
+| `drive` | files | Ionity's own documents (no IBMM data) | Ionity staff named as authors | Google Drive | Ionity | Ionity's policy | s20-21 | needs human decision | popia-human-actions.md#operators |

@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // The privacy notice on the phone (POPIA s18; the POPIA review's fix 5): shown after joining, until the member has read

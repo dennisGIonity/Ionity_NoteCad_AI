@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import { lazy, Suspense, useEffect } from 'react'
@@ -100,7 +100,7 @@ export default function App() {
       </main>
       {!isMap && !inTauri && (
         <div className="pointer-events-none absolute inset-x-0 top-[22%] text-center">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Ionity NoteCad</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Ionity Business Mind Map (IBMM)</p>
           <p className="mt-2 text-sm text-slate-400">Hold <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">Space</kbd> to talk · <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">/</kbd> to type · <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[11px]">M</kbd> for the map</p>
         </div>
       )}

@@ -1,11 +1,11 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
 -->
 
-# Ionity NoteCad
+# Ionity Business Mind Map (IBMM)
 
 Voice-first AI workspace (blueprint ION-ARC-NOTECAD-2026-001). The owner talks; the brain files each note on the
 owner's own mind map as notes, tasks, alerts and progress, and delegates work by name. Everything runs on the
@@ -63,7 +63,7 @@ Sync (ADR 0012): triggers write every change to `sync_changes`; last writer wins
 is set once a peer has the row. Target in the vault: `NC_BRAIN_SYNC_TARGET=http://<edge-node>:8789` or
 `postgresql://...` (Supabase), `NC_BRAIN_SYNC_TOKEN` for a remote node. Off this PC every request needs
 `NC_BRAIN_API_TOKEN`; this PC (loopback) does not. Diagram: `docs\notecad_data_flow.html`
-(artifact "NoteCad Capture Flow"). Decisions: `docs\adr\0007`-`0014`. Phase 6: `docs\plans\PHASE6.md`,
+(artifact "IBMM Capture Flow"). Decisions: `docs\adr\0007`-`0014`. Phase 6: `docs\plans\PHASE6.md`,
 numbers in `docs\perf\`, build history in `docs\BUILD_STATUS.md`.
 
 Roles (ADR 0014): owner 1, manager 2, employee 3 (system 0); `notecad_brain\permissions.py` holds the matrix and the

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "NoteCad main window: resize between the recorder pill and the map, drag, keep on top, hotkey events",
+  "description": "IBMM main window: resize between the recorder pill and the map, drag, keep on top, hotkey events",
   "windows": ["main"],
   "permissions": [
     "core:default",

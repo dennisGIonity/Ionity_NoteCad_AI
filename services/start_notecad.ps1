@@ -1,4 +1,4 @@
-# Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 #
@@ -134,7 +134,7 @@ function Get-Health {
 
 function Show-Health($rows) {
   Write-Host ""
-  Write-Host "  NoteCad on $env:COMPUTERNAME" -ForegroundColor White
+  Write-Host "  IBMM on $env:COMPUTERNAME" -ForegroundColor White
   foreach ($r in $rows) {
     $tag, $col = switch ($r.State) {
       "OK"   { "[ OK ]", "Green" }
@@ -158,7 +158,7 @@ if ($Stop) {
   & $BrainPs -Stop | Out-Null
   & $BrainPs -Stop -Name edge-node -Port 8789 | Out-Null
   & $Companion -Stop | Out-Null
-  Write-Host "  NoteCad stopped (companion, brain, edge node, UI)." -ForegroundColor Yellow
+  Write-Host "  IBMM stopped (companion, brain, edge node, UI)." -ForegroundColor Yellow
   return
 }
 

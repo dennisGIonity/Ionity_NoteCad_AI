@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -7,7 +7,7 @@
 
 # Breach runbook (POPIA s22)
 
-A security compromise: someone who should not have got NoteCad data may have got it (a lost or stolen phone or PC, a
+A security compromise: someone who should not have got IBMM data may have got it (a lost or stolen phone or PC, a
 leaked token, an unknown device in People & seats, a copy of `data\` where it should not be). Technical runbook, not
 legal advice; who decides and who tells whom is in [popia-human-actions.md](popia-human-actions.md#breach).
 

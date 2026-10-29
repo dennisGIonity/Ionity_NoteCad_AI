@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -85,7 +85,7 @@ engine stays at float16, beam 5, VAD on (ADR 0013).
 ## VRAM and RAM
 
 Steady state with everything loaded: 6,388 / 8,188 MiB (baseline 6,814; the Windows desktop's own use varies by
-about 0.5 GB). NoteCad's share: Gemma 1.6 GB, EmbeddingGemma 0.4 GB, Whisper 1.5 GB, about 3.5 GB in all; more than
+about 0.5 GB). IBMM's share: Gemma 1.6 GB, EmbeddingGemma 0.4 GB, Whisper 1.5 GB, about 3.5 GB in all; more than
 1.5 GB left over.
 
 ## Desktop and phone

@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // The privacy notice (POPIA s18; the POPIA review's fix 5). Shown once to everyone who uses a workspace: an owner first

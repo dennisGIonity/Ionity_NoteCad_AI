@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile (Android) | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile (Android) | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 package today.ionity.notecad;
@@ -63,14 +63,14 @@ public class BubbleService extends Service {
         running = true;
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL, "NoteCad capture", NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("Shows while the NoteCad bubble is ready to record");
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "IBMM capture", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Shows while the IBMM bubble is ready to record");
             nm.createNotificationChannel(ch);
         }
         try {
             startInForeground();
         } catch (RuntimeException ex) {
-            // Android 14+: a microphone service may only start while NoteCad is on screen
+            // Android 14+: a microphone service may only start while IBMM is on screen
             Log.w(TAG, "not allowed to start in the background", ex);
             stopSelf();
             return;
@@ -93,7 +93,7 @@ public class BubbleService extends Service {
         boolean rec = recorder != null;
         return new NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(rec ? "Recording a NoteCad note" : "NoteCad is ready")
+            .setContentTitle(rec ? "Recording an IBMM note" : "IBMM is ready")
             .setContentText(rec ? "Tap Stop to save it to the outbox" : "Tap the bubble or Record to capture a note")
             .setContentIntent(open)
             .setOngoing(true)
@@ -123,7 +123,7 @@ public class BubbleService extends Service {
         bubble.setText("🎙");
         bubble.setTextSize(26);
         bubble.setGravity(Gravity.CENTER);
-        bubble.setContentDescription("Record a NoteCad note");
+        bubble.setContentDescription("Record an IBMM note");
         paintBubble();
         int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size, type,

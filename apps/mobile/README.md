@@ -1,10 +1,10 @@
 <!--
-  Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 -->
 
-# NoteCad on the phone
+# IBMM on the phone
 
 Capacitor 8 + React 19 + Vite + Tailwind 4. Notes are saved on the phone first (outbox) and sent to the brain with
 tus when the phone can reach it. Decisions: `docs\adr\0012-multi-worker-sync-and-phone-capture.md`.
@@ -14,8 +14,8 @@ tus when the phone can reach it. Decisions: `docs\adr\0012-multi-worker-sync-and
 1. On the desktop: `powershell -ExecutionPolicy Bypass -File services\start_notecad.ps1 -Lan`
    Once, let phones through Windows Firewall: `powershell -ExecutionPolicy Bypass -File services\allow_phones_firewall.ps1`
    (asks for admin; Private networks and the local subnet only; `-Check` to look, `-Remove` to undo).
-2. In the NoteCad map, click the status chip at the bottom right, then **Pair a phone**.
-3. Scan the QR code with the phone. It opens NoteCad with the brain address, phone token and workspace.
+2. In the IBMM map, click the status chip at the bottom right, then **Pair a phone**.
+3. Scan the QR code with the phone. It opens IBMM with the brain address, phone token and workspace.
 
 ## Android
 
@@ -39,8 +39,8 @@ Native code: `android/app/src/main/java/today/ionity/notecad/`
 npm run build && npx cap sync ios && npx cap open ios
 ```
 
-Set the signing team, build to the phone, pair. Then Settings > Action Button > Shortcut > NoteCad >
-**Record a NoteCad note** (iPhone 15 Pro and later), or add it to Control Center, or say "Record a note in NoteCad".
+Set the signing team, build to the phone, pair. Then Settings > Action Button > Shortcut > IBMM >
+**Record an IBMM note** (iPhone 15 Pro and later), or add it to Control Center, or say "Record a note in IBMM".
 Native code: `ios/App/App/` (`RecordNoteIntent.swift`, `NoteCadPlugin.swift`, `NoteCadBridgeViewController.swift`).
 
 ## In a browser (testing)

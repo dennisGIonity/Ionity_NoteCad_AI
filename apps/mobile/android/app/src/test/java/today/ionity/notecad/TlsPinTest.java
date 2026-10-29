@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile (Android) | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile (Android) | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 package today.ionity.notecad;
@@ -27,7 +27,7 @@ import javax.net.ssl.X509TrustManager;
 /** The phone trusts the farm brain's own certificate only when it is the one from the QR (POPIA review, fix 4). */
 @RunWith(RobolectricTestRunner.class)
 public class TlsPinTest {
-    // a throwaway self-signed certificate ("NoteCad test brain"); PIN is the SHA-256 of its DER
+    // a throwaway self-signed certificate ("IBMM test brain"); PIN is the SHA-256 of its DER
     private static final String PEM = "-----BEGIN CERTIFICATE-----\n"
         + "MIIBJjCBzaADAgECAgEBMAoGCCqGSM49BAMCMB0xGzAZBgNVBAMMEk5vdGVDYWQg\n"
         + "dGVzdCBicmFpbjAeFw0yNjAxMDEwMDAwMDBaFw0zNTEyMzAwMDAwMDBaMB0xGzAZ\n"

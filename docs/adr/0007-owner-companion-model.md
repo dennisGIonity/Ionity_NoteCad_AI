@@ -1,11 +1,11 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
 -->
 
-# ADR 0007: The NoteCad Companion, a small model that lives in the app and learns its owner
+# ADR 0007: The IBMM Companion, a small model that lives in the app and learns its owner
 
 Status: accepted, 2026-10-21. Author: Dennis Grobler. Blueprint ION-ARC-NOTECAD-2026-001, sections 2.3, 3.3, 7.3.
 

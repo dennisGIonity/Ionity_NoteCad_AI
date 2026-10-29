@@ -2,7 +2,7 @@
   "name": "notecad-mobile",
   "private": true,
   "version": "0.5.0",
-  "description": "Ionity NoteCad phone app: capture, on-device outbox, resumable uploads. Policy 986 AED | License AED 900.",
+  "description": "Ionity Business Mind Map (IBMM) phone app: capture, on-device outbox, resumable uploads. Policy 986 AED | License AED 900.",
   "author": "Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>",
   "license": "SEE LICENSE IN LICENSE (AED 900, Policy 986 AED)",
   "type": "module",

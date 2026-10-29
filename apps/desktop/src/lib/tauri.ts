@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Only active inside the Tauri v2 shell (src-tauri): transparent window sizing per view and the global hotkey.
 // In a browser every function here is a no-op.

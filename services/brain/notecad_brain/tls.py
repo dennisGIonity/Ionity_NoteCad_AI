@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """TLS for the farm network (POPIA review, fix 4). On the LAN the brain speaks HTTPS with its own certificate, made
@@ -34,8 +34,8 @@ def ensure_cert(folder: str | Path) -> tuple[Path, Path]:
                                      x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
     for ip in local_ips():
         names.append(x509.IPAddress(ipaddress.ip_address(ip)))
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"NoteCad brain on {host}"),
-                         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Ionity NoteCad")])
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"IBMM brain on {host}"),
+                         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Ionity Business Mind Map (IBMM)")])
     now = dt.datetime.now(dt.timezone.utc)
     c = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(k.public_key())
          .serial_number(x509.random_serial_number()).not_valid_before(now - dt.timedelta(days=1))

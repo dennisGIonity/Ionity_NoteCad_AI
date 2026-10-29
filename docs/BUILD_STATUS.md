@@ -1,11 +1,11 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
 -->
 
-# NoteCad build status
+# IBMM build status
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
@@ -48,7 +48,7 @@ was checked with a pinned client on this PC, not from a phone.
 
 ## POPIA: the five high-priority fixes (29 October 2026)
 
-`docs\compliance\Ionity_NoteCad_POPIA_Assessment_v1.0` (technical, not legal advice) found NoteCad not yet compliant in
+`docs\compliance\Ionity_NoteCad_POPIA_Assessment_v1.0` (technical, not legal advice) found IBMM not yet compliant in
 four areas and listed twelve fixes. The five high ones are built:
 
 | # | Finding | What changed |
@@ -204,7 +204,7 @@ Decision record: ADR 0013. Plan and findings: `docs\plans\PHASE6.md`. Numbers: `
 | Panning, 2,000 nodes all open | 142.6 fps at 144 Hz (56 cards drawn) | 54.4 fps on a panel idling at 54.2 fps (60 Hz), 0 long frames |
 | Capture's change on the map after `action.applied` | 521 ms | 266 ms |
 | Desktop JavaScript loaded with the HUD | 560.7 KB raw / 183.5 KB gzip | 286 KB / 90.6 KB |
-| VRAM, NoteCad's share | about 3.5 GB of 8 GB | unchanged (Whisper kept at float16) |
+| VRAM, IBMM's share | about 3.5 GB of 8 GB | unchanged (Whisper kept at float16) |
 | SQL statements for the three showcase notes | 1,907 | 593 |
 
 **Open**

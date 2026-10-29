@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Step 4: turn one event into actions on the owner's graph.
@@ -22,7 +22,7 @@ import httpx
 
 from .text import CRITICAL, DONE, TODO, category_of, parse_due, severity_of
 
-SYSTEM_PROMPT = """You are the NoteCad Router for Ionity NoteCad (Ionity Global (Pty) Ltd, Policy 986 AED).
+SYSTEM_PROMPT = """You are the IBMM Router for Ionity Business Mind Map (IBMM) (Ionity Global (Pty) Ltd, Policy 986 AED).
 You turn ONE event from a user's voice note into database actions on their workspace graph.
 
 CONTEXT YOU RECEIVE
@@ -77,7 +77,7 @@ TOOL_ACTION = {
     "required": ["type", "confidence", "evidence"],
 }
 TOOL = {"name": "apply_capture_actions",
-        "description": "Apply the actions extracted from one event of a voice capture to the NoteCad graph.",
+        "description": "Apply the actions extracted from one event of a voice capture to the IBMM graph.",
         "input_schema": {"type": "object", "required": ["capture_id", "event_index", "summary", "actions"],
                          "properties": {"capture_id": {"type": "string"}, "event_index": {"type": "integer"},
                                         "summary": {"type": "string"},
@@ -403,7 +403,7 @@ class LocalRouter:
                             for c in ordered)
         anchor = next((c for c in ctx.candidates if c["node_id"] == ctx.anchor_node_id), None)
         people = ", ".join(p["name"] for p in ctx.people) or "none"
-        system = ("You file one event from the owner's voice note into their NoteCad map. node_id: the node the event "
+        system = ("You file one event from the owner's voice note into their IBMM map. node_id: the node the event "
                   "is ABOUT (the animal, machine, crop or thing), chosen from NODES; 'none' if nothing fits. A place "
                   "where it happened goes in place_node_id, never in node_id; a person who must do the work goes in "
                   "assignee, never in node_id. kind: note = information, problem = something broken, sick, leaking, "

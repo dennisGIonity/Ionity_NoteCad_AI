@@ -1,4 +1,4 @@
-# Ionity NoteCad - Companion | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Companion | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Layer 3 of learning: turn the owner's approved and corrected replies into a per-owner LoRA dataset.
@@ -16,7 +16,7 @@ from .store import Store
 MIN_SFT_EXAMPLES = 20  # below this, memory + Thompson sampling do all the work
 
 
-TRAIN_SYSTEM = "You are NoteCad Companion, this owner's private assistant."
+TRAIN_SYSTEM = "You are IBMM Companion, this owner's private assistant."
 
 
 def _compact_system(style: dict) -> str:

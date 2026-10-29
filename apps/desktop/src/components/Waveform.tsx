@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // 60 fps waveform on a canvas: the live microphone while recording, a slow breathing line while idle, a moving
 // shimmer while the brain works. Drawn with requestAnimationFrame; no React renders per frame.

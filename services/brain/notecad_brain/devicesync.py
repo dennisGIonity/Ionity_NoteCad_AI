@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """A member's device copy (ADR 0014, decision 21): devices are clients, not workers.

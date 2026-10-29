@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import {
   Beef, Briefcase, Building2, Car, Droplets, Fence, Folder, Leaf, MapPin, Package, Sprout, Tractor, Truck, User, Users,

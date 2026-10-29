@@ -1,7 +1,7 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
-"""Writes docs/compliance/popia-action-register.md: every action NoteCad takes on personal information, read from the
+"""Writes docs/compliance/popia-action-register.md: every action IBMM takes on personal information, read from the
 code so the register cannot drift: the brain's and the companion's routes (OpenAPI), the spoken admin commands
 (admin.py), the background threads, the synced tables (sync.TABLES), and the app actions listed below (each pointing
 at the file that does it). Every action is matched to one rule of RULES (what it touches, where it goes, who reads it,
@@ -178,7 +178,7 @@ RULES: list[Rule] = [
       "s19", HUMAN, "services/start_notecad.ps1; popia-human-actions.md#disk"),
     R(r"^files ci$", "none (made-up farms in tests)", "-", "GitHub Actions (public repo)", "anyone", "90 days",
       "-", OK, ".github/workflows/ci.yml"),
-    R(r"^files drive$", "Ionity's own documents (no NoteCad data)", "Ionity staff named as authors", "Google Drive",
+    R(r"^files drive$", "Ionity's own documents (no IBMM data)", "Ionity staff named as authors", "Google Drive",
       "Ionity", "Ionity's policy", "s20-21", HUMAN, "popia-human-actions.md#operators"),
     # ---------------------------------------------------------------- the apps
     R(r"^desktop (record|type)$", "voice, what was said", "the owner", "the brain on this PC", "-", "audio_days",
@@ -273,7 +273,7 @@ def render(rows: list[tuple[str, Rule]]) -> str:
     n_ok = sum(r.status == OK for _, r in rows)
     lines = [
         "<!--",
-        "  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI",
+        "  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI",
         "  Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>",
         "  Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved",
         "  Web: https://www.ionity.today | Ref: https://www.ionity.co.za",
@@ -282,7 +282,7 @@ def render(rows: list[tuple[str, Rule]]) -> str:
         "",
         "# POPIA action register",
         "",
-        "Every action NoteCad takes on personal information, read from the code (routes, spoken commands, background "
+        "Every action IBMM takes on personal information, read from the code (routes, spoken commands, background "
         "threads, synced tables, app actions). Technical compliance check, not legal advice. Rows that need a person "
         "to decide point at [popia-human-actions.md](popia-human-actions.md).",
         "",

@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -63,8 +63,8 @@ before any Phase 6 change. Nothing was changed to take these numbers except the 
 | Gemma 4 E2B decode speed | **98 tokens/s** (p50 of 5) | |
 | Gemma time to first token (warm, short prompt) | **72 ms** p50 | |
 | Whisper large-v3-turbo real-time factor (float16, beam 5, VAD; 5 files, 34.7 s of audio) | **0.068** (2.35 s for 34.7 s) | |
-| VRAM, idle desktop without NoteCad | 3,259 MiB (Windows shell, browsers, Claude app) | |
-| VRAM, full stack steady | **6,814 / 8,188 MiB**: NoteCad about 3.55 GB (Gemma 1.6 GB, EmbeddingGemma 0.4 GB, Whisper about 1.5 GB) | fits with headroom |
+| VRAM, idle desktop without IBMM | 3,259 MiB (Windows shell, browsers, Claude app) | |
+| VRAM, full stack steady | **6,814 / 8,188 MiB**: IBMM about 3.55 GB (Gemma 1.6 GB, EmbeddingGemma 0.4 GB, Whisper about 1.5 GB) | fits with headroom |
 | RAM | brain 809 MB, companion 72 MB, Ollama 57 MB (+ llama-server runners, not counted) | |
 | Desktop bundle (raw) | `index` 319.9 KB, `flow` 240.8 KB, CSS 55.5 KB, Tauri `window` 13.5 KB (gzip: 103.6 + 79.9 + 10.0 KB). Map code loads with the HUD | |
 | 2,000-node map, first draw | **3.3 s** | |

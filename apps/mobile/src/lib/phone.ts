@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Phone state: record into the outbox, upload the outbox with tus (resuming after drops), follow each note through
@@ -330,7 +330,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
     } catch (e) {
-      set({ rec: 'idle', error: (e as Error).name === 'NotAllowedError' ? 'Allow the microphone for NoteCad in the phone settings' : 'No microphone' })
+      set({ rec: 'idle', error: (e as Error).name === 'NotAllowedError' ? 'Allow the microphone for IBMM in the phone settings' : 'No microphone' })
       return
     }
     const mime = MIMES.find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m))

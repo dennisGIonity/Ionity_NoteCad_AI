@@ -2,7 +2,7 @@
   "name": "notecad-desktop",
   "private": true,
   "version": "0.3.0",
-  "description": "Ionity NoteCad desktop: transparent voice recorder HUD and live mind map. Policy 986 AED | License AED 900.",
+  "description": "Ionity Business Mind Map (IBMM) desktop: transparent voice recorder HUD and live mind map. Policy 986 AED | License AED 900.",
   "author": "Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>",
   "license": "SEE LICENSE IN LICENSE (AED 900, Policy 986 AED)",
   "type": "module",

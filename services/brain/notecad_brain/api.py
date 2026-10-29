@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Brain HTTP API.   uvicorn notecad_brain.api:app --host 127.0.0.1 --port 8788
@@ -248,7 +248,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         stop.set()
         brain.sync.stop()
 
-    app = FastAPI(title="NoteCad Brain", version=__version__, lifespan=lifespan,
+    app = FastAPI(title="IBMM Brain", version=__version__, lifespan=lifespan,
                   description="Voice note -> branch, note, task, alert, delegation. Policy 986 AED | License AED 900.")
     app.state.brain = brain
     app.state.stt_ready = None  # None: no speech engine to warm; False: loading; True: ready; str: error
@@ -363,7 +363,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         """This PC is trusted (the desktop app needs no token); phones and other workers on the LAN send the token
         as a Bearer header, or a short-lived ?ticket= on a GET where a header cannot be set (EventSource). On the LAN
         the brain speaks TLS (serve.py, -Lan). A web page open on this PC is not trusted: a change sent from a browser origin that is not one of
-        NoteCad's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it).
+        IBMM's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it).
         ADR 0014: a device token is looked at first and names the member everything is done as."""
         d = device_of(request)
         if d is not None:
@@ -375,7 +375,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         if token_ok(request):
             return
         if foreign:
-            raise HTTPException(403, "this origin may not change NoteCad without the token")
+            raise HTTPException(403, "this origin may not change IBMM without the token")
         if is_local(request) and not local_host(request):
             # a page on this PC whose name was pointed at 127.0.0.1 (DNS rebinding) sends no Origin on a GET; its
             # Host is its own name, not this PC's, so without the token it reads nothing

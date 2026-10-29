@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "NoteCad",
+  "productName": "Ionity Business Mind Map",
   "version": "0.3.0",
   "identifier": "today.ionity.notecad",
   "build": {
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "NoteCad",
+        "title": "Ionity Business Mind Map",
         "width": 760,
         "height": 260,
         "minWidth": 380,

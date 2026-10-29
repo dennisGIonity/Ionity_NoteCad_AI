@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://notecad.local/schema/actions.schema.json",
   "title": "apply_capture_actions",
-  "description": "Ionity NoteCad | Policy 986 AED | License AED 900. Actions extracted from one event of a voice capture.",
+  "description": "Ionity Business Mind Map (IBMM) | Policy 986 AED | License AED 900. Actions extracted from one event of a voice capture.",
   "type": "object",
   "additionalProperties": false,
   "required": ["capture_id", "event_index", "summary", "actions"],

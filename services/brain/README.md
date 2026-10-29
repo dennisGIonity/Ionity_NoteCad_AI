@@ -1,10 +1,10 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 -->
 
-# NoteCad brain
+# IBMM brain
 
 Voice note in, the owner's map updated: notes, tasks, alerts, new branches, links, and tasks delegated to the
 right person. The flow is drawn in `docs/notecad_data_flow.html`; the decisions are in `docs/adr/0008-brain-backend.md`.

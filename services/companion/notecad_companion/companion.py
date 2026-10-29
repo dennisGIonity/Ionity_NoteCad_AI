@@ -1,4 +1,4 @@
-# Ionity NoteCad - Companion | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Companion | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """The companion: one owner, one store, one small model. Chat, learn, remember, route offline."""
@@ -140,7 +140,7 @@ class Companion:
         self.store.set_feedback(interaction_id, rating, edited, redact(comment) if comment else None)
         return {"interaction_id": interaction_id, "changes": changes}
 
-    # ================================================================ learning from NoteCad notes
+    # ================================================================ learning from IBMM notes
     def observe(self, text: str, *, source: str = "note", ts: float | None = None, node_path: str | None = None) -> dict:
         """Called by the brain after a capture is applied, so the companion also learns from voice notes."""
         ts = ts or time.time()
@@ -187,7 +187,7 @@ class Companion:
         self.store.set_meta("last_consolidation", str(now))
         return stats
 
-    # ================================================================ outputs for the rest of NoteCad
+    # ================================================================ outputs for the rest of IBMM
     def keyterms(self, limit: int = 100) -> list[str]:
         """Owner vocabulary for the STT keyterm list (blueprint 3.1 vocabulary loop)."""
         terms = [v["term"] for v in self.store.vocab(limit)]
@@ -238,7 +238,7 @@ class Companion:
         listing = "\n".join(f"{c['node_id']} | {c['path']} | {c.get('kind', '')} | aliases: {', '.join(c.get('aliases', []))}"
                             for c in candidates)
         aliases = [f"{f['key']}: {f['value']}" for f in self.store.all_facts(0.6) if f["key"].startswith("alias.")]
-        system = ("You file one event from the owner's voice note into their NoteCad map. Pick the single best "
+        system = ("You file one event from the owner's voice note into their IBMM map. Pick the single best "
                   "node_id from the list (or 'none'). kind: note = information, problem = something broken, sick, "
                   "leaking, injured or unsafe, todo = something to do, done = something finished. severity is "
                   "critical for safety, animal suffering, water or power loss; warning for minor problems; else none. "

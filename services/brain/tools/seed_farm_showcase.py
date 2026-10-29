@@ -1,7 +1,7 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
-"""The NoteCad showcase: a clean farm workspace and three notes that exercise the whole stack.
+"""The IBMM showcase: a clean farm workspace and three notes that exercise the whole stack.
 
   1  "Wheel needs changing on tractor model John Deere 9550 - number 1"   -> task on John Deere 9550 #1
   2  "Today I planted field south 704 to 708"                             -> five fields filled to 100 %
@@ -34,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
-ROOT = HERE.parents[3]  # the NoteCad folder
+ROOT = HERE.parents[3]  # the IBMM folder
 SHOWCASE_ID = "showcase"
 STALE = re.compile(r"^demo-farm|^t_|^test", re.I)
 STALE_NAMES = re.compile(r"demo farm$", re.I)

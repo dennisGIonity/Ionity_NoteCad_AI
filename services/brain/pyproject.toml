@@ -1,8 +1,8 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900
 [project]
 name = "notecad-brain"
 version = "0.1.0"
-description = "NoteCad brain: voice note to branch, note, task, alert and delegation (Ionity Global (Pty) Ltd)"
+description = "IBMM brain: voice note to branch, note, task, alert and delegation (Ionity Global (Pty) Ltd)"
 authors = [{ name = "Dennis Grobler (Wabakipi)", email = "dennis.g@ionity.digital" }]
 license = { text = "AED 900 - Policy 986 AED - (c) 2026 Ionity Global (Pty) Ltd" }
 requires-python = ">=3.11"

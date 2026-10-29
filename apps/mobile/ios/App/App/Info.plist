@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>NoteCad</string>
+        <string>IBMM</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -67,9 +67,9 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>NoteCad records your voice notes so the brain can file them on the farm map.</string>
+	<string>IBMM records your voice notes so the brain can file them on the farm map.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>NoteCad sends your notes to the NoteCad brain on the farm network.</string>
+	<string>IBMM sends your notes to the IBMM brain on the farm network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

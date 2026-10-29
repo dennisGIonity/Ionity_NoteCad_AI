@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // "Pair a phone": a QR code with notecad://pair?u=<brain on the LAN>&t=<phone token>&w=<workspace>.
@@ -63,7 +63,7 @@ export function PairPhone({ onClose }: { onClose: () => void }) {
         )}
         {p?.ready && (
           <>
-            <p className="mt-2 text-xs text-slate-400">Install NoteCad on the phone, open it and scan this code (or point the camera app at it). The phone saves notes offline and sends them when it is on this network.</p>
+            <p className="mt-2 text-xs text-slate-400">Install IBMM on the phone, open it and scan this code (or point the camera app at it). The phone saves notes offline and sends them when it is on this network.</p>
             <div className="mx-auto mt-4 aspect-square w-60 overflow-hidden rounded-2xl bg-white p-2">
               {svg && <img className="size-full" alt="Pairing QR code" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />}
             </div>

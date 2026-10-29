@@ -1,5 +1,5 @@
 {
-  "about": "Ionity NoteCad | Policy 986 AED | License AED 900. Twenty field notes for the seeded Highveld farm (services/brain/tests/farm.py). 'node' is the key of the expected target; a channel child of it (Maintenance, Health Alerts) also counts. 'expect' lists action types that must appear. Phase 1 exit: at least 85 % right first time.",
+  "about": "Ionity Business Mind Map (IBMM) | Policy 986 AED | License AED 900. Twenty field notes for the seeded Highveld farm (services/brain/tests/farm.py). 'node' is the key of the expected target; a channel child of it (Maintenance, Health Alerts) also counts. 'expect' lists action types that must appear. Phase 1 exit: at least 85 % right first time.",
   "notes": [
     {"text": "One of the ewes in the south paddock broke her back left leg", "events": [{"node": "sheep", "expect": ["create_alert", "create_task"]}]},
     {"text": "The John Deere tractor's hydraulic hose just burst near the bean fields", "events": [{"node": "tractors", "expect": ["create_alert"]}]},

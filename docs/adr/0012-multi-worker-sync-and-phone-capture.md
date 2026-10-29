@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -48,7 +48,7 @@ signal all the time, so a note must never depend on the network being there when
    - Android: a foreground service (type microphone) with a draggable overlay bubble (tap to record, tap to save,
      long press to close); without the overlay permission, the notification's Record/Stop does the same. A launcher
      shortcut "Record note" opens the app recording.
-   - iOS: an App Intent "Record a NoteCad note" (App Shortcut, iOS 16+). Assign it to the Action Button
+   - iOS: an App Intent "Record an IBMM note" (App Shortcut, iOS 16+). Assign it to the Action Button
      (Settings > Action Button > Shortcut), add it to Control Center, or say it to Siri. It opens the app straight
      into recording; the web outbox does the rest. iOS has no background recorder: Apple does not allow one.
 

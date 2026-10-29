@@ -1,4 +1,4 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import { Link2, Loader2, QrCode } from 'lucide-react'
@@ -19,7 +19,7 @@ export function PairScreen() {
 
   const go = async (p: { url: string; token: string; ws: string } | null) => {
     if (!p) {
-      setErr('That is not a NoteCad pairing link')
+      setErr('That is not an IBMM pairing link')
       return
     }
     setBusy(true)
@@ -31,16 +31,16 @@ export function PairScreen() {
   return (
     <main className="safe mx-auto flex min-h-full max-w-md flex-col gap-6 py-8">
       <header>
-        <p className="text-xs uppercase tracking-[0.3em] text-sky-300/80">Ionity NoteCad</p>
+        <p className="text-xs uppercase tracking-[0.3em] text-sky-300/80">Ionity Business Mind Map (IBMM)</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-50">Connect this phone to the farm</h1>
-        <p className="mt-2 text-sm text-slate-400">Notes are saved on the phone first and sent to the NoteCad brain on the desktop or the Edge AI Node when the phone is on the farm network.</p>
+        <p className="mt-2 text-sm text-slate-400">Notes are saved on the phone first and sent to the IBMM brain on the desktop or the Edge AI Node when the phone is on the farm network.</p>
       </header>
 
       <section className="nc-glass rounded-2xl p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><QrCode className="size-4 text-sky-300" />Scan the code on the desktop</div>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-300">
           <li>On the desktop run <code className="rounded bg-white/10 px-1">start_notecad.ps1 -Lan</code></li>
-          <li>In the NoteCad map, click <b>Pair a phone</b></li>
+          <li>In the IBMM map, click <b>Pair a phone</b></li>
           <li>Point this phone's camera at the code and open the link</li>
         </ol>
       </section>

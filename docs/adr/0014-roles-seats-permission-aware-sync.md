@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -12,7 +12,7 @@ Builds on ADR 0012 (sync, phones) and ADR 0013 (hardening). Brief: `docs\prompts
 
 ## Context
 
-NoteCad is a one-owner workspace today:
+IBMM is a one-owner workspace today:
 
 - `members.role` (`owner|editor|viewer`) is only used for delegation and for who hears a critical alert
   (`delegate.alert_audience`). Nobody signs in as a member.

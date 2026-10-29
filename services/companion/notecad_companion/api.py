@@ -1,4 +1,4 @@
-# Ionity NoteCad - Companion | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Companion | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """HTTP API. One process can serve several owners (desktop / Edge node); each owner has their own SQLite file.
@@ -28,7 +28,7 @@ OWNER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None, token: str | None = None,
                  as_member: str | None = None):
-    """Open tasks, alerts and the mind map's facts (what needs work, how far along things are) from the NoteCad
+    """Open tasks, alerts and the mind map's facts (what needs work, how far along things are) from the IBMM
     brain, as short lines for the prompt. The owner id is the workspace id. focus: the node the owner has open on
     the map, so "this one" / "hier" in a question means that node. as_member (ADR 0014): a member other than the
     owner is asking, so the brain answers with what that member may see, and nothing else reaches the prompt."""
@@ -165,7 +165,7 @@ class RouteIn(BaseModel):
 def create_app(settings: Settings | None = None, llm=None, embedder=None) -> FastAPI:
     settings = settings or Settings()
     reg = Registry(settings, llm, embedder)
-    app = FastAPI(title="NoteCad Companion", version=__version__,
+    app = FastAPI(title="IBMM Companion", version=__version__,
                   description="Private on-device assistant that learns its owner. Policy 986 AED | License AED 900.")
     app.state.registry = reg
     origins = [o.strip() for o in (settings.cors_origins or "").split(",") if o.strip()]

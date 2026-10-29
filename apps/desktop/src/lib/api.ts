@@ -1,4 +1,4 @@
-// Ionity NoteCad - Desktop | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Desktop | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Brain (:8788) and companion (:8787) clients. Both default to this machine; override with VITE_ env vars,
@@ -44,7 +44,7 @@ export function parseJoinLink(link: string): { url: string; code: string; ws: st
  *  own device token (a shared office PC, run with NC_BRAIN_TRUST_LOOPBACK=0). The code works once. */
 export async function joinFromLink(link: string, confirm: (text: string) => boolean = window.confirm): Promise<string | null> {
   const j = parseJoinLink(link)
-  if (!j) return 'That is not a NoteCad invite link'
+  if (!j) return 'That is not an IBMM invite link'
   try {
     const pv = await fetch(`${j.url}/api/v1/join/preview`, {  // the code in the body, never in a URL
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: j.code }) })

@@ -1,4 +1,4 @@
-# Ionity NoteCad - Companion | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Companion | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Settings, read from environment variables prefixed NC_COMPANION_."""
@@ -21,7 +21,7 @@ def _env(name: str, default: str | None = None) -> str | None:
 @dataclass
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", "./data")))
-    # browsers allowed to call the API: the NoteCad desktop (Vite dev server, Tauri shell)
+    # browsers allowed to call the API: the IBMM desktop (Vite dev server, Tauri shell)
     cors_origins: str = field(default_factory=lambda: _env(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173,"
                         "http://127.0.0.1:8788,http://localhost:8788,tauri://localhost,http://tauri.localhost"))

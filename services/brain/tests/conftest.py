@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Policy 986 AED | License AED 900
+# Ionity Business Mind Map (IBMM) - Brain | Policy 986 AED | License AED 900
 """Every test that takes the `farm` fixture runs on SQLite, and also on Postgres when NC_BRAIN_TEST_PG_URL is set
 (e.g. postgresql://postgres@/notecad_test?host=/var/tmp&port=5433). Each Postgres run gets its own schema."""
 import os

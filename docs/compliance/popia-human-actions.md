@@ -1,5 +1,5 @@
 <!--
-  Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
+  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI
   Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
   Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
   Web: https://www.ionity.today | Ref: https://www.ionity.co.za
@@ -13,7 +13,7 @@ confirm the items marked **legal**.
 
 | # | What | Who | Why |
 |---|---|---|---|
-| 1 | <a id="officer"></a>Register Ionity Global's Information Officer (and any deputy) with the Information Regulator; publish Ionity's PAIA manual | Ionity (Dennis / Johan) | s55-56 and PAIA s51. NoteCad's notice names each business's own officer (the owner by default); Ionity needs its own as a supplier and future operator |
+| 1 | <a id="officer"></a>Register Ionity Global's Information Officer (and any deputy) with the Information Regulator; publish Ionity's PAIA manual | Ionity (Dennis / Johan) | s55-56 and PAIA s51. IBMM's notice names each business's own officer (the owner by default); Ionity needs its own as a supplier and future operator |
 | 2 | <a id="operators"></a>Sign operator agreements (s20-21) with Anthropic, Deepgram, Supabase and Google (Drive), and keep them on file; check each one's retention, training use and region; choose a Supabase region (South Africa or an adequate one) | Ionity | Nothing goes to Anthropic or Deepgram until an owner turns the cloud transfer on; when Ionity runs an edge node or Supabase for a farm, Ionity is that farm's operator and needs a written agreement with it too (security measures, breach duty) |
 | 3 | <a id="lawful-basis"></a>**legal** Write the lawful basis per purpose for the notice (s11): recording employees' work notes (the employment contract / the business's legitimate interest), naming third parties in notes, sending notes abroad (consent or a binding agreement, s72) | Ionity with a practitioner | Choosing this wording commits Ionity to a legal position, so the code does not choose it. The notice now says what, why, who, where and how long; the basis line is what is missing |
 | 4 | <a id="notice"></a>**legal** Review the privacy notice text (desktop `PrivacyNotice.tsx`, phone `PrivacySheet.tsx`, version 2) and the employee monitoring paragraph | Ionity with a practitioner | s18 lists what a notice must say; the text is plain-language and complete as far as the code knows, not reviewed by a lawyer |

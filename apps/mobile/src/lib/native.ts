@@ -1,9 +1,9 @@
-// Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI
+// Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // The native side of the phone app (android/.../NoteCadPlugin.java, ios/App/App/NoteCadPlugin.swift).
 // Android: the floating capture bubble, which records and uploads on its own (WorkManager + tus) with the app closed.
-// iOS: the Action Button / Control Center / Siri "Record a NoteCad note" opens the app straight into recording.
+// iOS: the Action Button / Control Center / Siri "Record an IBMM note" opens the app straight into recording.
 // In a browser every call resolves to a harmless default.
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 
@@ -35,7 +35,7 @@ interface NoteCadPlugin {
   addListener(event: 'outboxChanged' | 'launchAction', cb: (data: { action?: string }) => void): Promise<PluginListenerHandle>
 }
 
-const plugin = registerPlugin<NoteCadPlugin>('NoteCad')
+const plugin = registerPlugin<NoteCadPlugin>('NoteCad')  // the native plugin's own name (kept: installed apps use it)
 export const platform = Capacitor.getPlatform()  // 'android' | 'ios' | 'web'
 export const isNative = Capacitor.isNativePlatform()
 const hasPlugin = isNative && Capacitor.isPluginAvailable('NoteCad')

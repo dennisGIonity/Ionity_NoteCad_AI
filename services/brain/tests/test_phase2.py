@@ -1,4 +1,4 @@
-# Ionity NoteCad - Brain | Ionity Global (Pty) Ltd | AEDI
+# Ionity Business Mind Map (IBMM) - Brain | Ionity Global (Pty) Ltd | AEDI
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Phase 2: the mind map payload, live events (SSE), context-anchored capture and the companion's map awareness."""
@@ -452,12 +452,12 @@ def test_node_history_sync_status_and_workspace_list(tmp_path):
 def test_brain_serves_the_desktop_app(tmp_path):
     ui = tmp_path / "dist"
     (ui / "assets").mkdir(parents=True)
-    (ui / "index.html").write_text("<!doctype html><title>NoteCad</title>")
+    (ui / "index.html").write_text("<!doctype html><title>IBMM</title>")
     (ui / "assets" / "a.js").write_text("console.log(1)")
     b = make_brain(f"sqlite:///{tmp_path/'b.db'}")
     b.settings.ui_dir = str(ui)
     c = TestClient(create_app(b))
-    assert "NoteCad" in c.get("/app/").text and c.get("/app/assets/a.js").status_code == 200
+    assert "IBMM" in c.get("/app/").text and c.get("/app/assets/a.js").status_code == 200
     assert c.get("/", follow_redirects=False).headers["location"] == "/app/"
     assert c.get("/api/health").json()["ok"]
     b.settings.ui_dir = ""

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ionity NoteCad - Mobile | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd -->
+<!-- Ionity Business Mind Map (IBMM) - Mobile | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd -->
 <!-- No plain HTTP to the network (POPIA review, fix 4): the farm brain is reached over HTTPS with its pinned certificate
      (TlsPin). Plain HTTP only to this phone itself (the app is served as http://localhost) and the emulator's host. -->
 <network-security-config>
