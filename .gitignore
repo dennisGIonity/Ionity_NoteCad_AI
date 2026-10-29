@@ -44,3 +44,6 @@ Thumbs.db
 # Local exports and recordings (not part of the source)
 /NoteCad.zip
 /Ionity_AI_notepad.mp4
+
+# Playwright HTML report (a copy is kept in docs/media/playwright-report)
+apps/desktop/playwright-report/
