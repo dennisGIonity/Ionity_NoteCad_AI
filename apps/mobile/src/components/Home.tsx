@@ -87,7 +87,8 @@ function ContextPicker() {
   const rows = useMemo(() => (q ? found.map((n) => ({ n, depth: 0 })) : F.visible(tree.idx, fold)
     .filter((id) => tree.by.get(id)?.type !== 'root').map((id) => ({ n: tree.by.get(id)!, depth: (tree.idx.depth.get(id) ?? 1) - 1 }))),
   [q, found, tree, fold])
-  const pick = (n: { id: string; title: string }) => { setContext({ id: n.id, title: n.title }); setOpen(false) }
+  // a pick ends the search: the next "Record onto" opens on the tree, not on the last search
+  const pick = (n: { id: string; title: string }) => { setContext({ id: n.id, title: n.title }); setQ(''); setOpen(false) }
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="mx-auto flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">
@@ -105,7 +106,7 @@ function ContextPicker() {
           </div>
           <ul className="safe flex-1 space-y-1 overflow-y-auto pb-8" role={q ? undefined : 'tree'} aria-label="Branches">
             <li>
-              <button type="button" onClick={() => { setContext(null); setOpen(false) }} className="w-full rounded-xl px-3 py-3 text-left text-slate-200 hover:bg-white/5">
+              <button type="button" onClick={() => { setContext(null); setQ(''); setOpen(false) }} className="w-full rounded-xl px-3 py-3 text-left text-slate-200 hover:bg-white/5">
                 Whole farm <span className="text-xs text-slate-500">· the brain decides where</span>
               </button>
             </li>
