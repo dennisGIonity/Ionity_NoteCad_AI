@@ -22,6 +22,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true  // Robolectric: a real Context for OutboxStore in JVM tests
+        }
+    }
 }
 
 repositories {
@@ -38,6 +43,8 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.work:work-runtime:2.10.5"
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.robolectric:robolectric:4.17"   // MIT: Android classes (Base64, JSONObject, Context) on the JVM
+    testImplementation "androidx.test:core:1.7.0"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
