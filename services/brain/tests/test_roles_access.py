@@ -167,7 +167,7 @@ def test_employee_new_note_applies(roles):
     assert out["state"] == "applied"
     note = b.db.one("select * from notes where capture_id=?", (r["capture_id"],))
     assert note["member_id"] == ids["thandi"] and note["node_id"] == ids["pivot"]
-    row = b.db.one("select * from action_log where capture_id=? and action like '%append_note%'", (r["capture_id"],))
+    row = b.db.one("select * from action_log where capture_id=? and action like ?", (r["capture_id"], "%append_note%"))
     assert row["member_id"] == ids["thandi"] and row["member_level"] == 3
 
 
@@ -187,7 +187,7 @@ def test_employee_delete_is_refused_and_logged(roles):
     b, ids = roles
     res = b.change(as_(b, ids, "thandi"), ids["ws"], [{"type": "delete_node", "node_id": ids["pivot"]}])
     assert res["status"] == "refused" and b.graph.node(ids["pivot"]) is not None
-    log = b.db.one("select * from action_log where member_id=? and action like '%refused%'", (ids["thandi"],))
+    log = b.db.one("select * from action_log where member_id=? and action like ?", (ids["thandi"], "%refused%"))
     assert json.loads(log["action"])["action"] == "delete_node"
 
 
