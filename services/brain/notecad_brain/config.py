@@ -44,9 +44,10 @@ class Settings:
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Africa/Johannesburg"))
     worker: bool = field(default_factory=lambda: _env("WORKER", "1") == "1")  # background worker thread in the API
     api_token: str | None = field(default_factory=lambda: _env("API_TOKEN"))
-    # browsers allowed to call the API: the Vite dev server and the Tauri desktop shell
+    # browsers allowed to call the API: the Vite dev servers (desktop 5173, phone 5174) and the Tauri desktop shell
     cors_origins: str = field(default_factory=lambda: _env(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173,"
+                   "http://localhost:5174,http://127.0.0.1:5174,"
                    "http://127.0.0.1:8788,http://localhost:8788,tauri://localhost,http://tauri.localhost,"
                    "http://localhost,https://localhost,capacitor://localhost"))
     # the built desktop app (apps/desktop/dist), served at /app/; empty to turn off

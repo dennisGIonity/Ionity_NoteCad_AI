@@ -141,6 +141,17 @@ def test_a_foreign_web_page_cannot_post_notes_on_this_pc(farm):
     assert c.get(f"/api/v1/workspaces/{ids['ws']}/mindmap", headers={"Origin": "https://evil.example"}).status_code == 200
 
 
+def test_the_phone_dev_server_may_call_the_brain(farm):
+    # the phone app in a browser (npm run dev, :5174) could not pair: its origin was not allowed
+    b, ids = farm
+    c = _app(b)
+    url = f"/api/v1/workspaces/{ids['ws']}"
+    pre = c.options(url, headers={"Origin": "http://localhost:5174", "Access-Control-Request-Method": "GET"})
+    assert pre.headers.get("access-control-allow-origin") == "http://localhost:5174"
+    assert c.post(url + "/capture", data={"text": "Sheep moved", "wait": "false"},
+                  headers={"Origin": "http://localhost:5174"}).status_code == 202
+
+
 def test_query_token_only_for_reads(farm):
     b, ids = farm
     c = _app(b, token="s3cret")
