@@ -16,7 +16,7 @@ function record(name: string, value: unknown) {
 }
 
 async function openMap(page: Page, ws: string) {
-  await page.addInitScript(() => { try { localStorage.clear() } catch { /* */ } })
+  await page.addInitScript(() => { try { localStorage.clear(); localStorage.setItem('notecad.privacy.later', '99999999999999') } catch { /* */ } })
   const t = Date.now()
   await page.goto(`./?ws=${ws}&view=map`)
   await page.locator('.react-flow__node').first().waitFor({ timeout: 60_000 })

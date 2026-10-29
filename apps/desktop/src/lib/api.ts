@@ -3,7 +3,7 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Brain (:8788) and companion (:8787) clients. Both default to this machine; override with VITE_ env vars,
 // ?brain= / ?companion= / ?token= in the URL, or the settings popover (kept in this browser only).
-import type { Device, HistoryItem, InboxItem, Invite, Me, Member, MindMap, NodeDetail, Pairing, Seat, SyncRunResult,
+import type { Device, HistoryItem, InboxItem, Invite, Me, Member, MindMap, NodeDetail, Pairing, PrivacyNotice, Retention, Seat, SyncRunResult,
   SyncStatus, Workspace } from './types'
 
 const store = {
@@ -60,6 +60,18 @@ export async function joinFromLink(link: string, confirm: (text: string) => bool
   } catch {
     return `No answer from ${j.url}`
   }
+}
+
+let held: { ticket: string; until: number } | null = null
+
+/** A short-lived stand-in for the token in a URL (POPIA review: a token in a URL ends up in logs). This PC without
+ * a token needs none. */
+async function ticket(): Promise<string | null> {
+  if (!config.token) return null
+  if (held && held.until > Date.now() + 60_000) return held.ticket
+  const r = await call<{ ticket: string | null; expires_in: number | null }>(config.brain, '/api/v1/tickets', { method: 'POST' })
+  held = r.ticket ? { ticket: r.ticket, until: Date.now() + (r.expires_in ?? 600) * 1000 } : null
+  return r.ticket
 }
 
 export class ApiError extends Error {
@@ -120,6 +132,11 @@ export const api = {
   taskState: (id: string, state: 'open' | 'done' | 'cancelled') =>
     brain<unknown>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ state }) }),
   resolveAlert: (id: string) => brain<unknown>(`/alerts/${id}/resolve`, { method: 'POST' }),
+  // POPIA: the privacy notice and how long things are kept
+  privacy: (ws: string) => brain<PrivacyNotice>(`/workspaces/${ws}/privacy`),
+  acceptPrivacy: (ws: string, contact: string, retention: Retention) =>
+    brain<PrivacyNotice>(`/workspaces/${ws}/privacy`, { method: 'PUT', body: JSON.stringify({ contact, retention }) }),
+  ackPrivacy: (ws: string) => brain<PrivacyNotice>(`/workspaces/${ws}/privacy/ack`, { method: 'POST' }),
   // ADR 0014: who this app acts as, and the people of the business
   me: (ws: string) => brain<Me>(`/workspaces/${ws}/me`),
   members: (ws: string) => brain<Member[]>(`/workspaces/${ws}/members`),
@@ -143,15 +160,18 @@ export const api = {
   ask: (ws: string, text: string, contextNodeId: string | null) =>
     call<{ reply: string; ms: number; model?: string }>(config.companion, `/v1/${ws}/chat`,
       json({ text, context_node_id: contextNodeId })),
-  audioUrl(captureId: string) {
+  /** The recording behind a capture. A URL cannot carry a header, so with a token it carries a 10-minute ticket. */
+  async audioUrl(captureId: string) {
     const u = new URL(`${config.brain}/api/v1/captures/${captureId}/audio`)
-    if (config.token) u.searchParams.set('token', config.token)
+    const t = await ticket()
+    if (t) u.searchParams.set('ticket', t)
     return u.toString()
   },
-  eventsUrl(ws: string, lastId: number) {
+  async eventsUrl(ws: string, lastId: number) {
     const u = new URL(`${config.brain}/api/v1/workspaces/${ws}/events/stream`)
     u.searchParams.set('last_event_id', String(lastId))
-    if (config.token) u.searchParams.set('token', config.token)
+    const t = await ticket()
+    if (t) u.searchParams.set('ticket', t)
     return u.toString()
   },
 }

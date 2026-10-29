@@ -19,7 +19,8 @@ export interface NativeItem {
 }
 
 interface NoteCadPlugin {
-  configure(o: { url: string; token: string; ws: string }): Promise<void>
+  configure(o: { url: string; token: string; ws: string; pin: string }): Promise<void>
+  trust(o: { url: string; pin: string }): Promise<void>
   overlayAllowed(): Promise<{ allowed: boolean }>
   openOverlaySettings(): Promise<void>
   startBubble(): Promise<{ started: boolean; overlay: boolean }>
@@ -40,7 +41,11 @@ const hasPlugin = isNative && Capacitor.isPluginAvailable('NoteCad')
 
 export const Native = {
   available: hasPlugin,
-  configure: (o: { url: string; token: string; ws: string }) => (hasPlugin ? plugin.configure(o) : Promise.resolve()),
+  configure: (o: { url: string; token: string; ws: string; pin: string }) => (hasPlugin ? plugin.configure(o) : Promise.resolve()),
+  /** Trust this brain's own certificate (its SHA-256 from the QR) before the first request to it: HTTPS on the farm
+   * network with no certificate authority (POPIA review, fix 4). A no-op in a browser. */
+  trust: (url: string, pin: string | undefined) =>
+    (hasPlugin && pin && url.startsWith('https') ? plugin.trust({ url, pin }) : Promise.resolve()),
   overlayAllowed: async () => (hasPlugin && platform === 'android' ? (await plugin.overlayAllowed()).allowed : false),
   openOverlaySettings: () => (hasPlugin ? plugin.openOverlaySettings() : Promise.resolve()),
   startBubble: () => (hasPlugin ? plugin.startBubble() : Promise.resolve({ started: false, overlay: false })),

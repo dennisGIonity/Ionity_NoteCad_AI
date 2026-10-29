@@ -22,7 +22,7 @@ const item = (page: Page, title: string) => page.locator(`.react-flow__node[role
 const levelText = (page: Page) => page.locator('[data-fold-level]')
 
 async function open(page: Page, ws = 'showcase', fresh = true) {
-  if (fresh) await page.addInitScript(() => { try { if (!sessionStorage.getItem('kept')) { localStorage.clear(); sessionStorage.setItem('kept', '1') } } catch { /* */ } })
+  if (fresh) await page.addInitScript(() => { try { if (!sessionStorage.getItem('kept')) { localStorage.clear(); localStorage.setItem('notecad.privacy.later', '99999999999999'); sessionStorage.setItem('kept', '1') } } catch { /* */ } })
   await page.goto(`./?ws=${ws}&view=map`)
   await items(page).first().waitFor()
   await page.waitForTimeout(400)

@@ -71,8 +71,17 @@ public class NoteCadPlugin extends Plugin {
             .putString("token", call.getString("token", ""))
             .putString("ws", call.getString("ws", ""))
             .apply();
+        String pin = call.getString("pin", "");
+        if (pin != null && !pin.isEmpty()) TlsPin.put(getContext(), call.getString("url", ""), pin);
         OutboxStore.unpark(getContext());
         UploadWorker.enqueue(getContext());
+        call.resolve();
+    }
+
+    /** Trust a farm brain's own certificate (its SHA-256 from the QR or invite) before the first request to it. */
+    @PluginMethod
+    public void trust(PluginCall call) {
+        TlsPin.put(getContext(), call.getString("url", ""), call.getString("pin", ""));
         call.resolve();
     }
 
@@ -169,6 +178,7 @@ public class NoteCadPlugin extends Plugin {
     @PluginMethod
     public void wipe(PluginCall call) {
         OutboxStore.wipe(getContext());
+        TlsPin.clear(getContext());
         call.resolve();
     }
 

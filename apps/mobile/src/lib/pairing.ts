@@ -7,14 +7,25 @@ import { Native } from './native'
 
 export interface Pairing {
   url: string; token: string; ws: string; name?: string
+  /** SHA-256 of the brain's TLS certificate (an https brain on the farm network): the only one this phone trusts. */
+  pin?: string
   /** Joined with an invite (ADR 0014): this phone's own token, and who it acts for. */
   member?: { id: string; name: string; role: string }
 }
 
 /** A seat offered to this phone: notecad://join?u=<brain>&c=<one-time code>&w=<farm> (the code, never a token). */
-export interface JoinLink { url: string; code: string; ws: string }
+export interface JoinLink { url: string; code: string; ws: string; pin?: string }
+
+const PIN = /^[0-9a-f]{64}$/
+/** The f= of a pairing or join link: the certificate fingerprint, or nothing when it is not one. */
+const pinOf = (p: URLSearchParams) => { const f = (p.get('f') || '').toLowerCase(); return PIN.test(f) ? f : undefined }
 
 export const isDeviceToken = (t: string | undefined) => !!t && t.startsWith('nct_')
+
+/** Paired over plain HTTP with another machine: the farm network is HTTPS now, so this phone must be paired again
+ * (the app refuses plain HTTP to anything but itself). */
+export const needsRepair = (p: Pairing | null) =>
+  !!p && p.url.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2)(:|\/|$)/.test(p.url)
 
 const KEY = 'notecad.pairing'
 
@@ -33,7 +44,8 @@ export async function savePairing(p: Pairing | null): Promise<void> {
     else localStorage.removeItem(KEY)
   } catch { /* storage refused */ }
   // the Android bubble records and uploads without the app open: it needs the same address and token
-  await Native.configure(p ? { url: p.url, token: p.token, ws: p.ws } : { url: '', token: '', ws: '' }).catch(() => undefined)
+  await Native.configure(p ? { url: p.url, token: p.token, ws: p.ws, pin: p.pin ?? '' } : { url: '', token: '', ws: '', pin: '' })
+    .catch(() => undefined)
 }
 
 /** notecad://pair?u=http://192.168.1.20:8788&t=TOKEN&w=showcase (from the desktop's pairing QR). */
@@ -44,7 +56,7 @@ export function parsePairLink(link: string): Pairing | null {
     const p = new URLSearchParams(q)
     const url = (p.get('u') || '').replace(/\/$/, '')
     if (!/^https?:\/\//.test(url) || !p.get('w')) return null
-    return { url, token: p.get('t') || '', ws: p.get('w') || '' }
+    return { url, token: p.get('t') || '', ws: p.get('w') || '', pin: pinOf(p) }
   } catch {
     return null
   }
@@ -58,7 +70,7 @@ export function parseJoinLink(link: string): JoinLink | null {
     const url = (p.get('u') || '').replace(/\/$/, '')
     const code = p.get('c') || ''
     if (!/^https?:\/\//.test(url) || !p.get('w') || code.length < 6) return null
-    return { url, code, ws: p.get('w') || '' }
+    return { url, code, ws: p.get('w') || '', pin: pinOf(p) }
   } catch {
     return null
   }

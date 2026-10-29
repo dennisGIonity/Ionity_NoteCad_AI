@@ -10,7 +10,7 @@ vi.mock('./api', () => ({
     workspaces: vi.fn(async () => [{ id: 'ws1', name: 'Farm' }]),
     mindmap: vi.fn(async () => ({ cursor: 7, nodes: [], edges: [], root: 'r', stats: {}, workspace: { id: 'ws1', name: 'Farm' } })),
     sync: vi.fn(async () => ({})),
-    eventsUrl: (ws: string, id: number) => `http://brain/${ws}?last_event_id=${id}`,
+    eventsUrl: async (ws: string, id: number) => `http://brain/${ws}?last_event_id=${id}`,
   },
 }))
 

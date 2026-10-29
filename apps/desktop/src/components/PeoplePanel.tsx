@@ -4,10 +4,11 @@
 // People & seats (ADR 0014, decision 27). An owner adds seats, invites (a QR of a one-time join link), changes roles
 // and branches, and removes people and devices. A manager invites employees into free seats, inside their branches,
 // and sees their team. The brain checks every one of these again; this panel only offers what GET /me allows.
-import { Copy, Loader2, Smartphone, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Copy, Loader2, ShieldCheck, Smartphone, Trash2, UserPlus, Users, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../lib/api'
+import { OPEN_PRIVACY } from './PrivacyNotice'
 import { can, useApp } from '../lib/store'
 import type { Device, Invite, Member, Seat } from '../lib/types'
 import { ago, cls } from '../lib/ui'
@@ -74,6 +75,10 @@ export function PeoplePanel({ onClose }: { onClose: () => void }) {
         <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
           <Users className="size-4 text-sky-300" />
           <h2 id="people-title" className="flex-1 text-sm font-semibold text-slate-50">People & seats</h2>
+          <button type="button" onClick={() => window.dispatchEvent(new Event(OPEN_PRIVACY))}
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-slate-300 hover:bg-white/10">
+            <ShieldCheck className="size-3.5" />Privacy notice
+          </button>
           <span className="text-xs text-slate-400">{me?.name} · {ROLE[me?.level ?? 1]}</span>
           <button type="button" aria-label="Close" onClick={onClose} className="grid size-7 place-items-center rounded-full text-slate-400 hover:bg-white/10"><X className="size-4" /></button>
         </header>

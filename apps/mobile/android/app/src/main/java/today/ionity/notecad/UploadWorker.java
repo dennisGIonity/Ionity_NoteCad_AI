@@ -66,6 +66,7 @@ public class UploadWorker extends Worker {
             meta.put("recorded_at", o.optString("recordedAt"));
             meta.put("source", o.optString("source", "android-bubble"));
             String existing = o.optString("uploadUrl", "");
+            TlsPin.load(c);
             try {
                 TusUploader.Result r = TusUploader.upload(url + "/api/v1/workspaces/" + ws + "/uploads", token, audio, meta,
                     existing.isEmpty() ? null : existing,

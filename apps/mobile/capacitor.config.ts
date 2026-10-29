@@ -6,9 +6,10 @@ const config: CapacitorConfig = {
   appId: 'today.ionity.notecad',
   appName: 'NoteCad',
   webDir: 'dist',
-  // the brain is on the farm's LAN over plain HTTP: serve the app as http://localhost so the WebView may call it
-  server: { androidScheme: 'http', cleartext: true },
-  android: { allowMixedContent: true },
+  // served as http://localhost (kept: the outbox and the device copy live in that origin's storage). The farm brain is
+  // HTTPS with a pinned certificate; res/xml/network_security_config.xml allows plain HTTP to this phone only
+  server: { androidScheme: 'http', cleartext: false },
+  android: { allowMixedContent: false },
   ios: { contentInset: 'never' },
 }
 

@@ -85,7 +85,22 @@ function saveFold(ws: string, layout: Layout, s: F.FoldState) {
 function openStream(ws: string, cursor: number, get: () => AppState, set: (p: Partial<AppState>) => void) {
   clearTimeout(reopenTimer)
   source?.close()
-  const es = new EventSource(api.eventsUrl(ws, cursor))
+  source = null
+  const asked = ++streamAsk
+  api.eventsUrl(ws, cursor).then((url) => {
+    if (asked === streamAsk && get().ws === ws) listen(url, ws, get, set)
+  }, () => {
+    if (asked !== streamAsk) return
+    set({ live: 'reconnecting' })
+    const wait = Math.min(30000, 1000 * 2 ** reopenTries++)
+    reopenTimer = setTimeout(() => { if (get().ws === ws && asked === streamAsk) openStream(ws, get().lastEventId, get, set) }, wait)
+  })
+}
+
+let streamAsk = 0
+
+function listen(url: string, ws: string, get: () => AppState, set: (p: Partial<AppState>) => void) {
+  const es = new EventSource(url)
   source = es
   es.onopen = () => { reopenTries = 0; set({ live: 'live' }) }
   es.onerror = () => {

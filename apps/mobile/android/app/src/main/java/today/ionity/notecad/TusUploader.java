@@ -33,6 +33,7 @@ final class TusUploader {
 
     private static HttpURLConnection open(String url, String method, String token) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        TlsPin.secure(c);  // the farm brain's own certificate, when this phone has a pin for it
         c.setRequestMethod(method);
         c.setConnectTimeout(10000);
         c.setReadTimeout(30000);

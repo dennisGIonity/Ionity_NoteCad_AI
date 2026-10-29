@@ -16,6 +16,10 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     colorScheme: 'dark',  // the usual look; the light-mode test switches explicitly
     trace: 'retain-on-failure',
+    // the owner's privacy-notice setup (POPIA) is put off on the test browser, so it does not cover the map; the
+    // live workspace's notice is left as the owner set it. roles.spec reads it as the joining employee.
+    storageState: { cookies: [], origins: [{ origin: 'http://127.0.0.1:8788', localStorage: [
+      { name: 'notecad.privacy.later', value: '99999999999999' }] }] },
   },
   outputDir: '../../data/desktop/playwright',
 })

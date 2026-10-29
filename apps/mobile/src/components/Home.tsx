@@ -3,7 +3,7 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, CircleDot, CloudOff, Keyboard, ListTodo, Loader2, LogOut, MessageCircle, Mic,
-  RefreshCw, Send, Square, Trash2, Undo2, Wifi, X,
+  RefreshCw, Send, ShieldCheck, Square, Trash2, Undo2, Wifi, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Native, platform } from '../lib/native'
@@ -11,6 +11,7 @@ import type { NativeItem } from '../lib/native'
 import type { OutboxItem } from '../lib/outbox'
 import * as F from '@notecad/core/fold'
 import { usePhone } from '../lib/phone'
+import { PrivacySheet } from './PrivacySheet'
 import { TeamSheet } from './TeamSheet'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -60,6 +61,7 @@ function Menu() {
   const waiting = usePhone((s) => s.inbox.length)
   const [open, setOpen] = useState(false)
   const [team, setTeam] = useState(false)
+  const [privacy, setPrivacy] = useState(false)
   return (
     <div className="relative">
       <button type="button" aria-label="Menu" onClick={() => setOpen((o) => !o)} className="grid size-10 place-items-center rounded-full bg-white/5 text-slate-300">
@@ -73,12 +75,18 @@ function Menu() {
               <ListTodo className="size-4" />Team & Inbox{waiting ? ` (${waiting})` : ''}
             </button>
           )}
+          {usePhone.getState().privacy && (
+            <button type="button" onClick={() => { setOpen(false); setPrivacy(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-100 hover:bg-white/5">
+              <ShieldCheck className="size-4" />Privacy notice
+            </button>
+          )}
           <button type="button" onClick={() => { setOpen(false); void unpair() }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-rose-200 hover:bg-white/5">
             <LogOut className="size-4" />Disconnect this phone
           </button>
         </div>
       )}
       {team && <TeamSheet onClose={() => setTeam(false)} />}
+      {privacy && <PrivacySheet onClose={() => setPrivacy(false)} />}
     </div>
   )
 }
@@ -323,6 +331,7 @@ function BubbleCard() {
 }
 
 export function Home() {
+  const unread = usePhone((s) => !!s.privacy && !s.privacy.my_ack_at)
   return (
     <main className="safe mx-auto flex min-h-full max-w-md flex-col gap-5 pb-10 pt-4">
       <Status />
@@ -332,6 +341,7 @@ export function Home() {
       <BubbleCard />
       <Outbox />
       <NeedsWork />
+      {unread && <PrivacySheet />}
     </main>
   )
 }

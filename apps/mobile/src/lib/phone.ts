@@ -7,9 +7,9 @@ import { Upload } from 'tus-js-client'
 import { create } from 'zustand'
 import type { MindMap } from '../../../desktop/src/lib/types'
 import { deviceCopy, syncCopy } from './devicecopy'
-import { Native, platform, type NativeItem } from './native'
+import { isNative, Native, platform, type NativeItem } from './native'
 import { outbox, DONE, WAITING, type ItemState, type OutboxItem } from './outbox'
-import { isDeviceToken, loadPairing, savePairing, uuid7, type JoinLink, type Pairing } from './pairing'
+import { isDeviceToken, loadPairing, needsRepair, savePairing, uuid7, type JoinLink, type Pairing } from './pairing'
 
 export type Live = 'off' | 'connecting' | 'live' | 'reconnecting'
 export type RecState = 'idle' | 'arming' | 'recording'
@@ -44,6 +44,8 @@ interface PhoneState {
   /** ADR 0014: who this phone acts as (GET /me), and the Inbox items it may decide or follows */
   me: Me | null
   inbox: InboxItem[]
+  privacy: Privacy | null
+  ackPrivacy(): Promise<void>
   decide(id: string, decision: 'approve' | 'reject', reason?: string): Promise<string | null>
   invite(name: string, role: 'employee' | 'manager'): Promise<{ link?: string; error?: string }>
   init(): Promise<void>
@@ -63,6 +65,9 @@ interface PhoneState {
 
 export interface Me { member_id: string | null; name: string | null; level: number; role: string; scopes: string[];
   capabilities: Record<string, string> }
+/** POPIA: what the business's privacy notice says, and whether this member has read it (GET .../privacy). */
+export interface Privacy { business: string; owners: string[]; contact: string | null; retention_text: string;
+  cloud: { claude: boolean; deepgram: boolean; sync: string | null }; my_ack_at: string | null; is_owner: boolean }
 export interface InboxItem { id: string; kind: string; question: string; event_text: string | null; author_member_id: string | null }
 
 export interface JoinPreview { workspace: string; workspace_id: string; name: string; role: string; scope: string[]; expires_at: string }
@@ -139,11 +144,13 @@ export const usePhone = create<PhoneState>((set, get) => ({
   join: null,
   joinPreview: null,
   me: null,
+  privacy: null,
   inbox: [],
   rec: 'idle',
   recStartedAt: 0,
   level: 0,
-  error: null,
+  error: needsRepair(loadPairing()) && isNative
+    ? 'The farm network now uses a secure connection: pair this phone again (Pair a phone on the PC).' : null,
 
   async init() {
     if (started) return
@@ -172,6 +179,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
 
   async pair(p) {
     try {
+      await Native.trust(p.url, p.pin)
       const w = await call<{ name: string }>(p, `/workspaces/${p.ws}`)
       resetLive()  // a different brain: its own stream, its own event ids
       await savePairing({ ...p, name: w.name })
@@ -199,6 +207,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
     set({ join: j, joinPreview: null, error: null })
     if (!j) return
     try {
+      await Native.trust(j.url, j.pin)
       const r = await fetch(`${j.url}/api/v1/join?c=${encodeURIComponent(j.code)}`)
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status}`)
       set({ joinPreview: (await r.json()) as JoinPreview })
@@ -219,7 +228,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
       if (!r.ok) return got.detail ?? `The brain answered ${r.status}`
       resetLive()
       await deviceCopy.wipe()  // a new seat: nothing from before stays on this phone
-      const p: Pairing = { url: j.url, token: got.token, ws: got.workspace_id, name: got.workspace,
+      const p: Pairing = { url: j.url, token: got.token, ws: got.workspace_id, name: got.workspace, pin: j.pin,
         member: { id: got.member_id, name: got.name, role: got.role } }
       await savePairing(p)
       set({ pairing: p, join: null, joinPreview: null, offer: null, error: null })
@@ -230,6 +239,12 @@ export const usePhone = create<PhoneState>((set, get) => ({
     } catch (e) {
       return (e as Error).message
     }
+  },
+
+  async ackPrivacy() {
+    const p = get().pairing
+    if (!p) return
+    try { set({ privacy: await call<Privacy>(p, `/workspaces/${p.ws}/privacy/ack`, { method: 'POST' }) }) } catch { /* next time */ }
   },
 
   async decide(id, decision, reason) {
@@ -423,7 +438,8 @@ async function loadPeople(p: Pairing, set: (s: Partial<PhoneState>) => void) {
   try {
     const me = await call<Me>(p, `/workspaces/${p.ws}/me`)
     set({ me, inbox: await call<InboxItem[]>(p, `/workspaces/${p.ws}/inbox`) })
-  } catch { /* an older brain: no roles */ }
+    set({ privacy: await call<Privacy>(p, `/workspaces/${p.ws}/privacy`) })
+  } catch { /* an older brain: no roles, no notice */ }
 }
 
 function deviceName(): string {
@@ -499,12 +515,28 @@ async function send(p: Pairing, it: OutboxItem, set: (s: Partial<PhoneState>) =>
 // ---------------------------------------------------------------- following notes to "filed"
 const STATE_OF: Record<string, ItemState> = { 'stt.transcribing': 'transcribing', 'stt.completed': 'routing', 'router.resolving': 'routing' }
 
+let opening = false
+
+/** EventSource cannot send a header, so the URL carries a 10-minute ticket instead of the token (a URL ends up in
+ * logs). A closed stream asks for a new ticket on the next refresh. */
 function connectLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneState>) => void, cursor: number) {
-  if (es) return
+  if (es || opening) return
+  opening = true
+  set({ live: 'connecting' })
+  const ticket = p.token
+    ? call<{ ticket: string | null }>(p, '/tickets', { method: 'POST' }).then((t) => t.ticket, () => null)
+    : Promise.resolve(null)
+  void ticket.then((t) => {
+    opening = false
+    if (es || (p.token && !t)) { if (!es) set({ live: 'off' }); return }
+    openLive(p, get, set, cursor, t)
+  })
+}
+
+function openLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneState>) => void, cursor: number, ticket: string | null) {
   const u = new URL(`${p.url}/api/v1/workspaces/${p.ws}/events/stream`)
   u.searchParams.set('last_event_id', String(lastEvent || cursor))
-  if (p.token) u.searchParams.set('token', p.token)
-  set({ live: 'connecting' })
+  if (ticket) u.searchParams.set('ticket', ticket)
   es = new EventSource(u.toString())
   es.onopen = () => set({ live: 'live', reachable: true })
   const mine = es

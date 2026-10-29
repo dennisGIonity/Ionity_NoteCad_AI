@@ -3,6 +3,7 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import { lazy, Suspense, useEffect } from 'react'
 import { Inspector } from './components/Inspector'
+import { PrivacyGate } from './components/PrivacyNotice'
 import { RecorderHUD } from './components/RecorderHUD'
 import { SyncIndicator } from './components/SyncIndicator'
 import { useRecorder } from './lib/recorder'
@@ -106,6 +107,7 @@ export default function App() {
         <RecorderHUD docked={isMap} />
       </div>
       <SyncIndicator />
+      <PrivacyGate />
     </div>
   )
 }

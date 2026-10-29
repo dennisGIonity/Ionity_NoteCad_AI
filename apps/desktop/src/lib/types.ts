@@ -248,6 +248,13 @@ export interface Member {
   id: string; display_name: string; role: string; level: number; status: string; contact: string | null
   person_node_id: string | null; seat_id: string | null; read_only: number
 }
+/** POPIA: how long a workspace keeps things (days; null keeps until deleted). */
+export interface Retention { audio_days: number | null; transcript_days: number | null; log_days: number | null }
+export interface PrivacyNotice {
+  version: number; business: string; owners: string[]; contact: string | null; accepted_at: string | null
+  retention: Retention; retention_text: string; recommended: Retention
+  cloud: { claude: boolean; deepgram: boolean; sync: string | null }; my_ack_at: string | null; is_owner: boolean
+}
 export interface Seat { id: string; role_level: number; status: string; assigned_member_id?: string | null; member_name?: string | null }
 export interface Invite {
   id: string; seat_id: string; created_by: string | null; created_at: string; expires_at: string; used_at: string | null

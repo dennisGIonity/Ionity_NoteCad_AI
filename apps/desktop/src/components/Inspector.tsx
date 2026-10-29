@@ -45,6 +45,19 @@ function keyed(parts: string[]): [string, string, number][] {
   })
 }
 
+/** The recording behind a note. Its URL carries a short-lived ticket when a token is in use, fetched first. */
+function VoiceNote({ captureId }: { captureId: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    api.audioUrl(captureId).then((u) => { if (live) setSrc(u) }, () => undefined)
+    return () => { live = false }
+  }, [captureId])
+  if (!src) return null
+  // biome-ignore lint/a11y/useMediaCaption: the owner's own voice note; its transcript is the line above
+  return <audio controls preload="none" src={src} aria-label="Play the voice note" className="mt-1 h-7 w-full max-w-60" />
+}
+
 function Reply({ text }: { text: string }) {
   const bold = (line: string) => keyed(line.split(/\*\*(.+?)\*\*/g)).map(([k, part, i]) =>
     i % 2 ? <strong key={k} className="font-semibold text-white">{part}</strong> : <span key={k}>{part}</span>)
@@ -227,8 +240,7 @@ export function Inspector() {
                       </p>
                       {h.capture_text && <p className="mt-0.5 truncate text-[10px] italic text-slate-500" title={h.capture_text}>“{h.capture_text}”</p>}
                       {h.audio && h.capture_id && history.findIndex((x) => x.capture_id === h.capture_id) === history.indexOf(h) && (
-                        // biome-ignore lint/a11y/useMediaCaption: the owner's own voice note; its transcript is the line above
-                        <audio controls preload="none" src={api.audioUrl(h.capture_id)} aria-label="Play the voice note" className="mt-1 h-7 w-full max-w-60" />
+                        <VoiceNote captureId={h.capture_id} />
                       )}
                       {!h.undone && h.capture_id && history.findIndex((x) => x.capture_id === h.capture_id) === history.indexOf(h) && (
                         <button type="button" onClick={() => act(`u${h.capture_id}`, () => api.undo(h.capture_id!))}

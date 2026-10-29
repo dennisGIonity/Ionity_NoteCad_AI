@@ -37,6 +37,11 @@ test('an employee who joins never sees Financials', async ({ browser, page, requ
   expect(seen[0]).toContain('as employee')
   const token = await phone.evaluate(() => localStorage.getItem('notecad.token'))
   expect(token).toMatch(/^nct_/)
+  // the privacy notice (POPIA) waits for the new member to read it
+  await phone.goto(`./?ws=${WS}&view=map`)
+  await expect(phone.getByRole('dialog', { name: /Privacy notice/ })).toBeVisible()
+  await phone.getByRole('button', { name: 'I have read this' }).click()
+  await expect(phone.getByRole('dialog', { name: /Privacy notice/ })).toHaveCount(0)
 
   await phone.goto(`./?ws=${WS}&view=map`)
   await phone.locator('.react-flow__node').first().waitFor()
