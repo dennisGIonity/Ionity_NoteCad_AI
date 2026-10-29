@@ -29,6 +29,7 @@ interface NoteCadPlugin {
   uploadNow(): Promise<void>
   forget(o: { id: string }): Promise<void>
   consumeLaunchAction(): Promise<{ action: string | null }>
+  wipe(): Promise<void>
   addListener(event: 'outboxChanged' | 'launchAction', cb: (data: { action?: string }) => void): Promise<PluginListenerHandle>
 }
 
@@ -49,6 +50,8 @@ export const Native = {
   uploadNow: () => (hasPlugin && platform === 'android' ? plugin.uploadNow() : Promise.resolve()),
   forget: (id: string) => (hasPlugin ? plugin.forget({ id }) : Promise.resolve()),
   consumeLaunchAction: async () => (hasPlugin ? (await plugin.consumeLaunchAction()).action : null),
+  /** A revoked phone (ADR 0014): the native outbox, cache and token go. */
+  wipe: () => (hasPlugin ? plugin.wipe() : Promise.resolve()),
   on: (event: 'outboxChanged' | 'launchAction', cb: (d: { action?: string }) => void) =>
     hasPlugin ? plugin.addListener(event, cb) : Promise.resolve({ remove: async () => undefined } as PluginListenerHandle),
 }

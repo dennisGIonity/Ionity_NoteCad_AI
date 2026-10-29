@@ -167,6 +167,12 @@ public class NoteCadPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void wipe(PluginCall call) {
+        OutboxStore.wipe(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
     public void consumeLaunchAction(PluginCall call) {
         JSObject o = new JSObject();
         o.put("action", pendingAction);

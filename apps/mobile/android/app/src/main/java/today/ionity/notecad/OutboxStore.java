@@ -113,6 +113,14 @@ final class OutboxStore {
         meta(c, id).delete();
     }
 
+    /** This phone was removed from the business (ADR 0014): its recordings, its pairing and its token go. The web
+     *  layer has already handed in what the brain would still take. */
+    static void wipe(Context c) {
+        File[] files = dir(c).listFiles();
+        if (files != null) for (File f : files) f.delete();
+        prefs(c).edit().clear().apply();
+    }
+
     /** Uploaded notes are kept in the list for a day, then forgotten. */
     static void prune(Context c) {
         long cut = System.currentTimeMillis() - 24L * 3600 * 1000;

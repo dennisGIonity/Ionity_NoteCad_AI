@@ -5,7 +5,16 @@
 // Set by scanning the pairing QR on the desktop (a notecad://pair link) or by typing it in.
 import { Native } from './native'
 
-export interface Pairing { url: string; token: string; ws: string; name?: string }
+export interface Pairing {
+  url: string; token: string; ws: string; name?: string
+  /** Joined with an invite (ADR 0014): this phone's own token, and who it acts for. */
+  member?: { id: string; name: string; role: string }
+}
+
+/** A seat offered to this phone: notecad://join?u=<brain>&c=<one-time code>&w=<farm> (the code, never a token). */
+export interface JoinLink { url: string; code: string; ws: string }
+
+export const isDeviceToken = (t: string | undefined) => !!t && t.startsWith('nct_')
 
 const KEY = 'notecad.pairing'
 
@@ -36,6 +45,20 @@ export function parsePairLink(link: string): Pairing | null {
     const url = (p.get('u') || '').replace(/\/$/, '')
     if (!/^https?:\/\//.test(url) || !p.get('w')) return null
     return { url, token: p.get('t') || '', ws: p.get('w') || '' }
+  } catch {
+    return null
+  }
+}
+
+export function parseJoinLink(link: string): JoinLink | null {
+  try {
+    const s = link.trim()
+    if (!/^notecad:\/\/join/i.test(s) && !s.includes('c=')) return null
+    const p = new URLSearchParams(s.includes('?') ? s.slice(s.indexOf('?') + 1) : s)
+    const url = (p.get('u') || '').replace(/\/$/, '')
+    const code = p.get('c') || ''
+    if (!/^https?:\/\//.test(url) || !p.get('w') || code.length < 6) return null
+    return { url, code, ws: p.get('w') || '' }
   } catch {
     return null
   }

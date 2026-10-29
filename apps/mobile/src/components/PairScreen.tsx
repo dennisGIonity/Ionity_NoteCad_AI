@@ -3,11 +3,13 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 import { Link2, Loader2, QrCode } from 'lucide-react'
 import { useState } from 'react'
-import { parsePairLink } from '../lib/pairing'
+import { parseJoinLink, parsePairLink } from '../lib/pairing'
 import { usePhone } from '../lib/phone'
 
 export function PairScreen() {
   const pair = usePhone((s) => s.pair)
+  const offerJoin = usePhone((s) => s.offerJoin)
+  const revokedNote = usePhone((s) => s.error)
   const [link, setLink] = useState('')
   const [url, setUrl] = useState('http://192.168.')
   const [token, setToken] = useState('')
@@ -44,9 +46,13 @@ export function PairScreen() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <label htmlFor="link" className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Link2 className="size-4 text-sky-300" />Or paste the pairing link</label>
-        <input id="link" className={field} placeholder="notecad://pair?u=…" value={link} onChange={(e) => setLink(e.target.value)} autoCapitalize="off" autoCorrect="off" />
-        <button type="button" disabled={busy || !link} onClick={() => go(parsePairLink(link))}
+        <label htmlFor="link" className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Link2 className="size-4 text-sky-300" />Or paste the invite or pairing link</label>
+        <input id="link" className={field} placeholder="notecad://join?u=… or notecad://pair?u=…" value={link} onChange={(e) => setLink(e.target.value)} autoCapitalize="off" autoCorrect="off" />
+        <button type="button" disabled={busy || !link} onClick={() => {
+          const j = parseJoinLink(link)  // an invite from the owner or a manager (ADR 0014)
+          if (j) void offerJoin(j)
+          else void go(parsePairLink(link))
+        }}
           className="rounded-xl bg-sky-500 px-4 py-2.5 font-medium text-white disabled:opacity-40">Connect</button>
       </section>
 
@@ -65,6 +71,7 @@ export function PairScreen() {
       </details>
 
       {busy && <p className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="size-4 animate-spin" />Checking the brain…</p>}
+      {!err && revokedNote && <p role="status" className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">{revokedNote}</p>}
       {err && <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{err}</p>}
     </main>
   )

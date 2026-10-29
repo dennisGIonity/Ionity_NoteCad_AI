@@ -6,6 +6,7 @@ import { Inspector } from './components/Inspector'
 import { RecorderHUD } from './components/RecorderHUD'
 import { SyncIndicator } from './components/SyncIndicator'
 import { useRecorder } from './lib/recorder'
+import { joinFromLink } from './lib/api'
 import { useApp } from './lib/store'
 import { fitWindow, inTauri, onHotkey } from './lib/tauri'
 import { cls } from './lib/ui'
@@ -21,7 +22,14 @@ export default function App() {
   const inspecting = useApp((s) => !!s.selected)
   const init = useApp((s) => s.init)
 
-  useEffect(() => { void init() }, [init])
+  useEffect(() => {
+    const join = new URLSearchParams(location.search).get('join')  // an invite for this computer (ADR 0014)
+    if (!join) { void init(); return }
+    void joinFromLink(join).then((err) => {
+      if (err) window.alert(err)
+      location.replace(location.pathname)  // the code is used up: drop it from the address
+    })
+  }, [init])
   useEffect(() => { document.documentElement.classList.toggle('tauri', inTauri) }, [])
   useEffect(() => { void fitWindow(view) }, [view])
 

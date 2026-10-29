@@ -6,9 +6,10 @@
 import { Upload } from 'tus-js-client'
 import { create } from 'zustand'
 import type { MindMap } from '../../../desktop/src/lib/types'
-import { Native, type NativeItem } from './native'
+import { deviceCopy, syncCopy } from './devicecopy'
+import { Native, platform, type NativeItem } from './native'
 import { outbox, DONE, WAITING, type ItemState, type OutboxItem } from './outbox'
-import { loadPairing, savePairing, uuid7, type Pairing } from './pairing'
+import { isDeviceToken, loadPairing, savePairing, uuid7, type JoinLink, type Pairing } from './pairing'
 
 export type Live = 'off' | 'connecting' | 'live' | 'reconnecting'
 export type RecState = 'idle' | 'arming' | 'recording'
@@ -33,6 +34,13 @@ interface PhoneState {
   /** A notecad://pair link that arrived: shown for the owner to confirm before the phone talks to that brain. */
   offer: Pairing | null
   offerPair(p: Pairing | null): void
+  /** A notecad://join link (ADR 0014): what it offers is shown first; joining happens only when the person says so. */
+  join: JoinLink | null
+  joinPreview: JoinPreview | null
+  offerJoin(j: JoinLink | null): Promise<void>
+  acceptJoin(): Promise<string | null>
+  /** This phone was removed from the business: hand in what it recorded before, then wipe everything. */
+  revoked(): Promise<void>
   init(): Promise<void>
   pair(p: Pairing): Promise<string | null>
   unpair(): Promise<void>
@@ -47,6 +55,15 @@ interface PhoneState {
   undo(id: string): Promise<void>
   refresh(): Promise<void>
 }
+
+export interface JoinPreview { workspace: string; workspace_id: string; name: string; role: string; scope: string[]; expires_at: string }
+
+/** The brain answered 410: this device (or its member) was revoked; the phone wipes its copy (ADR 0014). */
+export class RevokedError extends Error {
+  constructor() { super('This phone was removed from the business') }
+}
+
+let revoking = false
 
 // ---------------------------------------------------------------- the brain over the farm network
 function headers(p: Pairing): Record<string, string> {
@@ -63,7 +80,10 @@ async function call<T>(p: Pairing, path: string, init: RequestInit = {}): Promis
     const r = await fetch(`${p.url}/api/v1${path}`, { ...init, headers: h, signal: ctl.signal })
     if (!r.ok) {
       let msg = `${r.status}`
-      try { msg = (await r.json()).detail ?? msg } catch { /* not JSON */ }
+      let body: { detail?: unknown } = {}
+      try { body = await r.json() } catch { /* not JSON */ }
+      if (r.status === 410 && (body.detail as { wipe?: boolean } | undefined)?.wipe) throw new RevokedError()
+      msg = typeof body.detail === 'string' ? body.detail : msg
       throw new Error(r.status === 401 ? 'The phone token was not accepted: pair again' : String(msg))
     }
     return (await r.json()) as T
@@ -107,6 +127,8 @@ export const usePhone = create<PhoneState>((set, get) => ({
   map: null,
   context: null,
   offer: null,
+  join: null,
+  joinPreview: null,
   rec: 'idle',
   recStartedAt: 0,
   level: 0,
@@ -162,15 +184,74 @@ export const usePhone = create<PhoneState>((set, get) => ({
 
   offerPair(p) { set({ offer: p }) },
 
+  async offerJoin(j) {
+    set({ join: j, joinPreview: null, error: null })
+    if (!j) return
+    try {
+      const r = await fetch(`${j.url}/api/v1/join?c=${encodeURIComponent(j.code)}`)
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status}`)
+      set({ joinPreview: (await r.json()) as JoinPreview })
+    } catch (e) {
+      set({ error: (e as Error).name === 'TypeError' ? `No answer from ${j.url}: is the phone on the farm's network?` : (e as Error).message })
+    }
+  },
+
+  async acceptJoin() {
+    const j = get().join
+    if (!j) return null
+    try {
+      const r = await fetch(`${j.url}/api/v1/join`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: j.code, device_name: deviceName(), platform }),
+      })
+      const got = await r.json().catch(() => ({}))
+      if (!r.ok) return got.detail ?? `The brain answered ${r.status}`
+      resetLive()
+      await deviceCopy.wipe()  // a new seat: nothing from before stays on this phone
+      const p: Pairing = { url: j.url, token: got.token, ws: got.workspace_id, name: got.workspace,
+        member: { id: got.member_id, name: got.name, role: got.role } }
+      await savePairing(p)
+      set({ pairing: p, join: null, joinPreview: null, offer: null, error: null })
+      await outbox.unpark()
+      await get().refresh()
+      void get().drain()
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  },
+
+  async revoked() {
+    const p = get().pairing
+    if (!p || revoking) return
+    revoking = true
+    try {
+      // what was recorded before the revoke is handed in once (held for an owner); the rest is refused and goes
+      await get().drain()
+      await deviceCopy.wipe()
+      try { await call(p, '/device/wiped', { method: 'POST' }) } catch { /* it wipes all the same */ }
+      for (const it of await outbox.all()) await outbox.remove(it.id)
+      await Native.wipe().catch(() => undefined)
+      resetLive()
+      await savePairing(null)
+      set({ pairing: null, farm: null, map: null, live: 'off', reachable: null, items: [],
+        error: `This phone was removed from ${p.name ?? 'the business'}: its copy has been wiped.` })
+    } finally {
+      revoking = false
+    }
+  },
+
   async refresh() {
     const p = get().pairing
     if (!p) return
     try {
+      if (isDeviceToken(p.token)) await syncCopy((path) => call(p, path))  // the member's copy, kept for no signal
       const map = await call<MindMap>(p, `/workspaces/${p.ws}/mindmap?tasks=true&notes=0`)
       set({ map, farm: map.workspace.name, reachable: true })
       connectLive(p, get, set, map.cursor)
-    } catch {
-      set({ reachable: false })
+    } catch (e) {
+      if (e instanceof RevokedError) void get().revoked()
+      else set({ reachable: false })
     }
   },
 
@@ -302,6 +383,10 @@ export const usePhone = create<PhoneState>((set, get) => ({
   },
 }))
 
+function deviceName(): string {
+  return platform === 'android' ? 'Android phone' : platform === 'ios' ? 'iPhone' : 'Browser'
+}
+
 async function send(p: Pairing, it: OutboxItem, set: (s: Partial<PhoneState>) => void): Promise<boolean> {
   const fail = async (err: string, retryable = true) => {
     const attempts = it.attempts + 1
@@ -324,6 +409,11 @@ async function send(p: Pairing, it: OutboxItem, set: (s: Partial<PhoneState>) =>
       set({ reachable: true })
       return true
     } catch (e) {
+      if (e instanceof RevokedError) {  // recorded after the phone was removed: the brain will not take it
+        await outbox.patch(it.id, { state: 'failed', error: e.message, nextTryAt: Number.MAX_SAFE_INTEGER })
+        if (!revoking) void usePhone.getState().revoked()
+        return true  // go on with the next one
+      }
       return fail((e as Error).message, !(e as Error).message.includes('token'))
     }
   }

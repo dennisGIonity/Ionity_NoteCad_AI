@@ -28,6 +28,39 @@ export const config = {
   },
 }
 
+/** notecad://join?u=<brain>&c=<one-time code>&w=<farm> (ADR 0014): a seat offered to this computer. */
+export function parseJoinLink(link: string): { url: string; code: string; ws: string } | null {
+  const s = link.trim()
+  if (!/^notecad:\/\/join\?/i.test(s)) return null
+  const p = new URLSearchParams(s.slice(s.indexOf('?') + 1))
+  const url = (p.get('u') || '').replace(/\/$/, '')
+  const code = p.get('c') || ''
+  if (!/^https?:\/\//.test(url) || !p.get('w') || code.length < 6) return null
+  return { url, code, ws: p.get('w') || '' }
+}
+
+/** Join with an invite (?join=<link>): the brain says what it is, the person confirms, then this computer keeps its
+ *  own device token (a shared office PC, run with NC_BRAIN_TRUST_LOOPBACK=0). The code works once. */
+export async function joinFromLink(link: string, confirm: (text: string) => boolean = window.confirm): Promise<string | null> {
+  const j = parseJoinLink(link)
+  if (!j) return 'That is not a NoteCad invite link'
+  try {
+    const pv = await fetch(`${j.url}/api/v1/join?c=${encodeURIComponent(j.code)}`)
+    const info = await pv.json()
+    if (!pv.ok) return info.detail ?? `The brain answered ${pv.status}`
+    const where = info.scope?.length ? ` (${info.scope.join(', ')})` : ''
+    if (!confirm(`Join ${info.workspace} as ${info.role}${where}, as ${info.name}?`)) return 'Not joined'
+    const r = await fetch(`${j.url}/api/v1/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: j.code, device_name: 'Desktop', platform: 'desktop' }) })
+    const got = await r.json()
+    if (!r.ok) return got.detail ?? `The brain answered ${r.status}`
+    config.save({ brain: j.url, token: got.token, workspace: got.workspace_id })
+    return null
+  } catch {
+    return `No answer from ${j.url}`
+  }
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {

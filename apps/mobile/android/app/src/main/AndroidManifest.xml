@@ -30,6 +30,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="notecad" android:host="pair" />
+                <!-- an invite to a seat (ADR 0014): notecad://join?u=..&c=<one-time code>&w=.. -->
+                <data android:scheme="notecad" android:host="join" />
             </intent-filter>
 
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />

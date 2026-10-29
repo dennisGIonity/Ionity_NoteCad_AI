@@ -89,4 +89,15 @@ public class OutboxStoreTest {
         assertTrue(a.matches("[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"));
         assertTrue(a.compareTo(b) < 0);
     }
+
+    @Test
+    public void aRevokedPhoneWipesItsOutboxAndPairing() throws Exception {
+        OutboxStore.write(ctx, item("w1", 1, "saved"));
+        OutboxStore.audio(ctx, "w1").createNewFile();
+        OutboxStore.prefs(ctx).edit().putString("token", "nct_x").putString("url", "http://brain").commit();
+        OutboxStore.wipe(ctx);
+        assertTrue(OutboxStore.all(ctx).isEmpty());
+        assertFalse(OutboxStore.audio(ctx, "w1").exists());
+        assertEquals("", OutboxStore.prefs(ctx).getString("token", ""));
+    }
 }
