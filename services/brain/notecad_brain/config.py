@@ -63,4 +63,8 @@ class Settings:
     upload_dir: str | None = field(default_factory=lambda: _env("UPLOAD_DIR"))  # tus parts; default next to audio
     bind_host: str = field(default_factory=lambda: _env("BIND", "127.0.0.1"))  # 0.0.0.0 when phones on the LAN connect
     trust_loopback: bool = field(default_factory=lambda: _env("TRUST_LOOPBACK", "1") == "1")  # this PC needs no token
+    # ADR 0014: the member this PC's own app acts as (default: the workspace's first owner)
+    local_member: str | None = field(default_factory=lambda: _env("LOCAL_MEMBER"))
+    # phones paired before seats send the shared token: they act as the first owner until re-paired (0 refuses them)
+    legacy_token_owner: bool = field(default_factory=lambda: _env("LEGACY_TOKEN_OWNER", "1") == "1")
     max_audio_mb: int = field(default_factory=lambda: int(_env("MAX_AUDIO_MB", "25")))

@@ -27,6 +27,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from .permissions import OWNER, SYSTEM_PRINCIPAL, View, load_principal
+
 TUS_VERSION = "1.0.0"
 CAPTURE_ID = re.compile(r"[0-9a-fA-F-]{8,64}")
 EXTENSIONS = "creation,creation-with-upload,termination,expiration"
@@ -111,7 +113,8 @@ class UploadStore:
         return n
 
 
-def router(brain, settings, auth, ws_ok) -> APIRouter:
+def router(brain, settings, auth, ws_ok, who=None) -> APIRouter:
+    """who(request, ws): the member an upload is for (ADR 0014); the recording is theirs, and only they resume it."""
     r = APIRouter()
     store = UploadStore(Path(settings.upload_dir), settings.max_audio_mb * 1024 * 1024)
     brain.uploads = store
@@ -123,10 +126,17 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
         if request.headers.get("tus-resumable") != TUS_VERSION:
             raise HTTPException(412, "Tus-Resumable 1.0.0 required", headers={"Tus-Version": TUS_VERSION})
 
-    def get(ws: str, uid: str) -> dict:
+    def principal(request: Request, ws: str):
+        return who(request, ws) if who is not None else SYSTEM_PRINCIPAL
+
+    def get(ws: str, uid: str, request: Request | None = None) -> dict:
         info = store.info(uid)
         if info is None or info["ws"] != ws:
             raise HTTPException(404, "no such upload", headers=tus_headers())
+        if request is not None:
+            p = principal(request, ws)
+            if p.level > OWNER and info.get("member_id") != p.member_id:  # someone else's recording
+                raise HTTPException(404, "no such upload", headers=tus_headers())
         if info["expires"] < time.time() and info["offset"] < info["length"]:
             store.delete(uid)
             raise HTTPException(410, "upload expired", headers=tus_headers())
@@ -135,10 +145,17 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
     def finish(info: dict) -> str:
         meta = info["meta"]
         audio = store.data_path(info["id"]).read_bytes()
-        res = brain.register_capture(info["ws"], audio=audio, mime=meta.get("filetype") or "audio/ogg",
-                                     capture_id=meta.get("capture_id") or None, recorded_at=meta.get("recorded_at") or None,
-                                     source=meta.get("source") or "phone", lang_hint=meta.get("lang_hint") or None,
-                                     context_node_id=meta.get("context_node_id") or None, enqueue=True)
+        p = load_principal(brain.db, info["ws"], info.get("member_id")) or SYSTEM_PRINCIPAL
+        try:
+            res = brain.register_capture(info["ws"], audio=audio, mime=meta.get("filetype") or "audio/ogg",
+                                         capture_id=meta.get("capture_id") or None,
+                                         recorded_at=meta.get("recorded_at") or None,
+                                         source=meta.get("source") or "phone", lang_hint=meta.get("lang_hint") or None,
+                                         context_node_id=meta.get("context_node_id") or None, enqueue=True, principal=p)
+        except PermissionError as e:
+            raise HTTPException(403, str(e), headers=tus_headers())
+        except ValueError as e:  # CaptureConflict (a GraphError): that capture id is someone else's
+            raise HTTPException(409, str(e), headers=tus_headers())
         info["capture_id"] = res["capture_id"]
         store.save(info)
         store.data_path(info["id"]).unlink(missing_ok=True)  # the audio now lives with the capture
@@ -207,11 +224,16 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
         meta = parse_metadata(request.headers.get("upload-metadata"))
         if meta.get("capture_id") and not CAPTURE_ID.fullmatch(meta["capture_id"]):
             raise HTTPException(400, "capture_id must be a UUID", headers=tus_headers())
+        p = principal(request, ws)
+        if p.read_only:
+            raise HTTPException(403, "a read-only member cannot record notes", headers=tus_headers())
         if meta.get("context_node_id"):
             n = brain.graph.node(meta["context_node_id"])
-            if n is None or n["workspace_id"] != ws:
+            if n is None or n["workspace_id"] != ws or not View(brain.db, p, ws).rows(meta["context_node_id"]):
                 raise HTTPException(400, "context_node_id is not in this workspace", headers=tus_headers())
         info = store.create(ws, length, meta)
+        info["member_id"] = p.member_id
+        store.save(info)
         if request.headers.get("content-type", "").startswith(OCTET):  # creation-with-upload
             with store.lock(info["id"]):
                 await append(request, info, offset=0)
@@ -224,7 +246,7 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
     def head(ws: str, uid: str, request: Request):
         auth(request)
         check_version(request)
-        info = get(ws, uid)
+        info = get(ws, uid, request)
         return Response(status_code=200, headers={**done_headers(info), "Upload-Length": str(info["length"]),
                                                   "Upload-Metadata": ",".join(
                                                       f"{k} {base64.b64encode(v.encode()).decode()}" for k, v in info["meta"].items())})
@@ -238,7 +260,7 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
         if not lock.acquire(blocking=False):
             raise HTTPException(423, "upload busy", headers=tus_headers())
         try:
-            info = get(ws, uid)
+            info = get(ws, uid, request)
             if info["offset"] < info["length"]:
                 await append(request, info)
             if info["offset"] == info["length"] and not info.get("capture_id"):
@@ -250,7 +272,7 @@ def router(brain, settings, auth, ws_ok) -> APIRouter:
     def delete(ws: str, uid: str, request: Request):
         auth(request)
         check_version(request)
-        get(ws, uid)
+        get(ws, uid, request)
         store.delete(uid)
         return Response(status_code=204, headers=tus_headers())
 

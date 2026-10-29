@@ -46,3 +46,26 @@ def test_token_required_when_set(tmp_path):
     c = client(tmp_path, token="s3cret")
     assert c.post("/v1/x/chat", json={"text": "hi"}).status_code == 401
     assert c.post("/v1/x/chat", json={"text": "hi"}, headers={"Authorization": "Bearer s3cret"}).status_code == 200
+
+
+def test_a_member_has_their_own_memory(tmp_path):
+    """ADR 0014: the brain asks for a member other than the owner (as_member); they get a store of their own."""
+    c = client(tmp_path)
+    c.post("/v1/farm/chat", json={"text": "My name is Dennis"})
+    c.post("/v1/farm/chat", json={"text": "My name is Thandi", "as_member": "m-thandi"})
+    assert c.get("/v1/farm/card").json()["facts"]["owner.name"]["value"] == "Dennis"
+    assert (tmp_path / "farm~m-thandi.sqlite").exists()
+    assert c.post("/v1/farm/chat", json={"text": "hi", "as_member": "../x"}).status_code == 422
+
+
+def test_brain_digest_asks_as_the_member():
+    import httpx
+
+    from notecad_companion.api import brain_digest
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(dict(req.url.params))
+        return httpx.Response(200, json={"tasks": [], "alerts": [], "map": {"lines": []}})
+    brain_digest("http://brain", "farm", transport=httpx.MockTransport(handler), as_member="m-thandi")()
+    assert seen == [{"as_member": "m-thandi"}]

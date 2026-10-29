@@ -18,12 +18,17 @@ Edges: belongs_to_category (child -> parent), has_task (node -> task), assigned_
 node -> person from delegation), related_to (cross-links: located_at, affects, related_to).
 
 Everything is computed here, server-side, so the phone, the desktop and the companion show the same thing.
+
+ADR 0014: built for one viewer. Rows they may not see are left out before anything is counted, and for anyone below
+owner the status roll-ups (display status, echo dot) are worked out again from what they see, so nothing on the map
+hints at a restricted branch.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from .common import STATUS_RANK, now_iso, parse_iso
+from .common import STATUS_RANK, now_iso, parse_iso, worst
+from .permissions import SYSTEM_PRINCIPAL, View
 
 CATEGORY_KINDS = {"category", "group"}
 PEOPLE_ID = "virtual:people"
@@ -99,12 +104,44 @@ def _reminder(t: dict, now: datetime) -> dict:
             "priority": t["priority"], "assignee": t.get("assignee_name") or t.get("assignee_hint")}
 
 
+def as_seen(rows: list[dict], view: View) -> list[dict]:
+    """The nodes a viewer sees, with roll-ups from what they see: a path stub shows only its title, kind and what
+    is under it (ADR 0014, decision 11)."""
+    # only a hidden node's ancestors, and path stubs, can roll up differently from what is stored: copy and redo those
+    parent = {n["id"]: n["parent_id"] for n in rows}
+    affected: set[str] = set()
+    for n in rows:
+        if not view.node(n["id"]) or view.stub(n["id"]):
+            cur = n["parent_id"] if not view.stub(n["id"]) else n["id"]
+            while cur and cur not in affected:
+                affected.add(cur)
+                cur = parent.get(cur)
+    kept = [dict(n) if n["id"] in affected else n for n in rows if view.node(n["id"])]
+    kids: dict[str, list[dict]] = {}
+    for n in kept:
+        if view.stub(n["id"]):
+            n.update(status="ok", status_reason=None, open_tasks=0, open_alerts=0, attributes={}, summary=None,
+                     stub=True)
+        if n["parent_id"] in affected:
+            kids.setdefault(n["parent_id"], []).append(n)
+    for n in sorted((n for n in kept if n["id"] in affected), key=lambda n: -n["depth"]):  # deepest first
+        ks = kids.get(n["id"], [])
+        chans = [k["display_status"] for k in ks if k["kind"] == "channel"]
+        n["display_status"] = worst(n["status"], *chans) if chans else n["status"]
+        cw = worst("ok", *[worst(k["display_status"], k["child_worst"]) for k in ks])
+        n["child_worst"] = cw if STATUS_RANK[cw] >= STATUS_RANK["ok"] else "ok"
+    return kept
+
+
 def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: datetime | None = None,
-          cursor: int | None = None) -> dict:
+          cursor: int | None = None, view: View | None = None) -> dict:
     db, graph = brain.db, brain.graph
     now = now or datetime.now(timezone.utc)
     wsrow = graph.workspace(ws)
+    view = view or View(db, SYSTEM_PRINCIPAL, ws)
     rows = graph.nodes(ws)
+    if not view.all:
+        rows = as_seen(rows, view)
     by_id = {n["id"]: n for n in rows}
     root = next(n for n in rows if n["parent_id"] is None)
 
@@ -115,19 +152,22 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
             n = by_id.get(n["parent_id"])
         return n["id"] if n else None
 
-    members = {m["id"]: m for m in graph.members(ws)}
-    open_tasks = db.query("select t.*, m.display_name as assignee_name from tasks t left join members m "
-                          "on m.id=t.assignee_member where t.workspace_id=? and t.state='open' "
-                          "order by t.due_at is null, t.due_at, t.created_at", (ws,))
+    members = {m["id"]: view.member(m) for m in graph.members(ws) if m["status"] == "active"}
+    open_tasks = [t for t in db.query("select t.*, m.display_name as assignee_name from tasks t left join members m "
+                                      "on m.id=t.assignee_member where t.workspace_id=? and t.state='open' "
+                                      "order by t.due_at is null, t.due_at, t.created_at", (ws,)) if view.rows(t["node_id"])]
     done_counts: dict[str, int] = {}
     for r in db.query("select node_id, count(*) as c from tasks where workspace_id=? and state='done' "
                       "group by node_id", (ws,)):
-        done_counts[r["node_id"]] = r["c"]
-    alerts = db.query("select * from alerts where workspace_id=? and resolved_at is null order by created_at desc", (ws,))
-    notes = db.query("select n.id, n.node_id, n.body, n.capture_id, n.author, n.created_at, c.source, c.recorded_at, "
-                     "c.anchor_node_id from notes n left join captures c on c.id=n.capture_id "
-                     "where n.workspace_id=? order by n.created_at desc limit 2000", (ws,))
-    edges = db.query("select * from edges where workspace_id=?", (ws,))
+        if view.rows(r["node_id"]):
+            done_counts[r["node_id"]] = r["c"]
+    alerts = [a for a in db.query("select * from alerts where workspace_id=? and resolved_at is null "
+                                  "order by created_at desc", (ws,)) if view.rows(a["node_id"])]
+    notes = [n for n in db.query("select n.id, n.node_id, n.body, n.capture_id, n.author, n.created_at, c.source, "
+                                 "c.recorded_at, c.anchor_node_id from notes n left join captures c on c.id=n.capture_id "
+                                 "where n.workspace_id=? order by n.created_at desc limit 2000", (ws,))
+             if view.rows(n["node_id"])]
+    edges = [e for e in db.query("select * from edges where workspace_id=?", (ws,)) if view.edge(e["src_id"], e["dst_id"])]
 
     # ------------------------------------------------------------ per visible node: own items
     own_tasks: dict[str, list] = {}
@@ -186,6 +226,8 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
             "channels": [{"id": c["id"], "title": c["title"], "display_status": c["display_status"],
                           "open_tasks": c["open_tasks"], "open_alerts": c["open_alerts"]} for c in chans],
             "attributes": n["attributes"], "updated_at": n["updated_at"],
+            "visibility": n.get("visibility") or "all", "eff_level": n.get("eff_level") or 3,
+            **({"stub": True} if n.get("stub") else {}),
         }
 
     # ------------------------------------------------------------ roll-ups: counts and progress up the tree
@@ -297,7 +339,8 @@ def build(brain, ws: str, *, tasks: bool = True, notes_per_node: int = 3, now: d
                                             and needs_work(x)),
                   "open_tasks": len(open_tasks), "open_alerts": len(alerts),
                   "overdue_tasks": sum(1 for t in open_tasks if _reminder(t, now)["state"] == "overdue"),
-                  "inbox": db.one("select count(*) as c from inbox where workspace_id=? and state='open'", (ws,))["c"],
+                  "inbox": sum(1 for i in db.query("select author_member_id, route_member_ids from inbox where "
+                                                   "workspace_id=? and state='open'", (ws,)) if view.inbox(i)),
                   "progress_pct": r["progress_pct"]},
         "nodes": list(out.values()),
         "edges": E,

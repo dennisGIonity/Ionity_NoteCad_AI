@@ -26,17 +26,19 @@ from .store import Store
 OWNER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None, token: str | None = None):
+def brain_digest(base_url: str, workspace_id: str, timeout: float = 2.0, transport=None, token: str | None = None,
+                 as_member: str | None = None):
     """Open tasks, alerts and the mind map's facts (what needs work, how far along things are) from the NoteCad
     brain, as short lines for the prompt. The owner id is the workspace id. focus: the node the owner has open on
-    the map, so "this one" / "hier" in a question means that node."""
+    the map, so "this one" / "hier" in a question means that node. as_member (ADR 0014): a member other than the
+    owner is asking, so the brain answers with what that member may see, and nothing else reaches the prompt."""
     import httpx
 
     def fetch(focus: str | None = None) -> list[str]:
         with httpx.Client(timeout=timeout, transport=transport,
                           headers={"Authorization": f"Bearer {token}"} if token else None) as c:
-            r = c.get(f"{base_url.rstrip('/')}/v1/workspaces/{workspace_id}/digest",
-                      params={"focus": focus} if focus else None)
+            params = {k: v for k, v in (("focus", focus), ("as_member", as_member)) if v}
+            r = c.get(f"{base_url.rstrip('/')}/v1/workspaces/{workspace_id}/digest", params=params or None)
             r.raise_for_status()  # a 401 is an error to report, not an empty farm
             d = r.json()
         lines = []
@@ -91,19 +93,23 @@ class Registry:
         with c.lock, self.model_lock:
             yield c
 
-    def get(self, owner_id: str) -> Companion:
-        if not OWNER_ID.match(owner_id):
+    def get(self, owner_id: str, member: str | None = None) -> Companion:
+        """member (ADR 0014): someone in the owner's business other than the owner. They get a store of their own (the
+        companion remembers the person) and the brain's digest as they may see it (the brain knows the business)."""
+        if not OWNER_ID.match(owner_id) or (member is not None and not OWNER_ID.match(member)):
             raise HTTPException(400, "bad owner id")
+        key = f"{owner_id}~{member}" if member else owner_id
         with self._lock:
-            if owner_id not in self._owners:
-                store = Store(Path(self.settings.data_dir) / f"{owner_id}.sqlite")
-                self._owners[owner_id] = Companion(
+            if key not in self._owners:
+                store = Store(Path(self.settings.data_dir) / f"{key}.sqlite")
+                self._owners[key] = Companion(
                     store, self.llm, self.embedder, history_turns=self.settings.history_turns,
                     memory_top_k=self.settings.memory_top_k, max_reply_tokens=self.settings.max_reply_tokens,
                     llm_fact_extraction=self.settings.llm_fact_extraction,
-                    open_work=brain_digest(self.settings.brain_url, owner_id, token=self.settings.brain_token)
+                    open_work=brain_digest(self.settings.brain_url, owner_id, token=self.settings.brain_token,
+                                           as_member=member)
                     if self.settings.brain_url else None)
-            return self._owners[owner_id]
+            return self._owners[key]
 
     def drop(self, owner_id: str) -> None:
         with self._lock:
@@ -113,6 +119,7 @@ class Registry:
 class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     context_node_id: str | None = Field(default=None, max_length=64)  # the node open on the owner's map
+    as_member: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")  # sent by the brain (ADR 0014)
 
 
 class FeedbackIn(BaseModel):
@@ -124,6 +131,7 @@ class FeedbackIn(BaseModel):
 
 class ObserveIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    as_member: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")  # sent by the brain (ADR 0014)
     source: str = "note"
     node_path: str | None = None
     ts: float | None = None
@@ -173,7 +181,8 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
                 "embedder": reg.embedder.name, "provenance": PROVENANCE}
 
     @app.post("/v1/{owner_id}/chat")
-    def chat(body: ChatIn, c: Companion = Depends(owner)):
+    def chat(owner_id: str, body: ChatIn, _: None = Depends(auth)):
+        c = reg.get(owner_id, body.as_member)
         t0 = time.perf_counter()
         with reg.using(c):
             out = c.chat(body.text, context_node_id=body.context_node_id)
@@ -189,7 +198,8 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
             raise HTTPException(404, "no such interaction")
 
     @app.post("/v1/{owner_id}/observe")
-    def observe(body: ObserveIn, c: Companion = Depends(owner)):
+    def observe(owner_id: str, body: ObserveIn, _: None = Depends(auth)):
+        c = reg.get(owner_id, body.as_member)
         with reg.using(c):
             return c.observe(body.text, source=body.source, ts=body.ts, node_path=body.node_path)
 

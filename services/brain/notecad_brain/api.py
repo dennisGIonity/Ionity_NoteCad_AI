@@ -7,6 +7,7 @@ Every route is served under /v1/... and, for the app, also under /api/v1/... (sa
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import logging
 import threading
@@ -20,10 +21,13 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from . import __version__
-from .common import PROVENANCE
+from .common import PROVENANCE, now_iso
+from .events import for_view
 from .config import Settings
 from .graph import GraphError
-from .pipeline import AUDIO_EXT, Brain
+from .permissions import (ALLOW, OWNER, ROLES, Principal, View, capabilities, load_principal,
+                          owner_principal)
+from .pipeline import AUDIO_EXT, Brain, CaptureConflict
 
 log = logging.getLogger("notecad.brain")
 
@@ -99,7 +103,22 @@ class SyncAckIn(BaseModel):
 
 
 class ResolveIn(BaseModel):
-    node_id: str
+    node_id: str | None = None  # where a held note goes (kind place)
+    decision: str | None = Field(default=None, pattern="^(approve|reject)$")  # a proposal (ADR 0014)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class DismissIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class VisibilityIn(BaseModel):
+    visibility: str = Field(pattern="^(all|manager|owner)$")
+
+
+class AskIn(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+    context_node_id: str | None = Field(default=None, max_length=64)
 
 
 class TaskPatch(BaseModel):
@@ -183,21 +202,50 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
     allowed_origins = set(origins)
 
+    DEVICE = "nct_"  # a per-device token (ADR 0014); the brain keeps only its SHA-256
+    REVOKED = {"code": "revoked", "wipe": True, "detail": "this device was removed from the business: its copy is wiped"}
+
+    def bearer(request: Request) -> str | None:
+        hdr = request.headers.get("authorization") or ""
+        if hdr.startswith("Bearer "):
+            return hdr[7:].strip()
+        if request.method in ("GET", "HEAD"):  # only where a header cannot be set: EventSource, <audio src>
+            return request.query_params.get("token")
+        return None
+
     def token_ok(request: Request) -> bool:
+        """The shared token (NC_BRAIN_API_TOKEN): other brains, and phones paired before seats."""
         if not settings.api_token:
             return False
-        want = settings.api_token.encode()
-        hdr = (request.headers.get("authorization") or "").encode()
-        if hmac.compare_digest(hdr, b"Bearer " + want):
-            return True
-        q = request.query_params.get("token")  # only where a header cannot be set: EventSource, <audio src>
-        return request.method in ("GET", "HEAD") and q is not None and hmac.compare_digest(q.encode(), want)
+        tok = bearer(request)
+        return tok is not None and hmac.compare_digest(tok.encode(), settings.api_token.encode())
+
+    def device_of(request: Request) -> dict | None:
+        """A device token: its device row, or 410 with the order to wipe when the device or its member was revoked."""
+        tok = bearer(request)
+        if not tok or not tok.startswith(DEVICE):
+            return None
+        d = brain.db.one("select * from devices where token_hash=?", (hashlib.sha256(tok.encode()).hexdigest(),))
+        if d is None:
+            raise HTTPException(401, "missing or wrong token")
+        m = brain.db.one("select status from members where id=?", (d["member_id"],))
+        if d["revoked_at"] or m is None or m["status"] != "active":
+            raise HTTPException(410, REVOKED)
+        now = now_iso()
+        if (d.get("last_seen_at") or "")[:16] != now[:16]:  # at most once a minute
+            brain.db.update("devices", {"id": d["id"]}, {"last_seen_at": now})
+        return d
 
     def check_auth(request: Request) -> None:
         """This PC is trusted (the desktop app needs no token); phones and other workers on the LAN send the token
         as a Bearer header, or ?token= on a GET where a header cannot be set (EventSource). Plain HTTP: LAN or VPN
         only. A web page open on this PC is not trusted: a change sent from a browser origin that is not one of
-        NoteCad's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it)."""
+        NoteCad's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it).
+        ADR 0014: a device token is looked at first and names the member everything is done as."""
+        d = device_of(request)
+        if d is not None:
+            request.state.device = d
+            return
         origin = request.headers.get("origin")
         foreign = (origin is not None and origin not in allowed_origins
                    and request.method not in ("GET", "HEAD", "OPTIONS"))
@@ -216,20 +264,86 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     def auth(request: Request) -> None:
         check_auth(request)
 
+    def device(request: Request) -> dict | None:
+        return getattr(request.state, "device", None)
+
+    def local_principal(ws: str) -> Principal:
+        if settings.local_member:
+            p = load_principal(brain.db, ws, settings.local_member)
+            if p is not None and p.active:
+                return p
+        return owner_principal(brain.db, ws)
+
+    def who(request: Request, ws: str) -> Principal:
+        """The member a request acts for in a workspace, from its credential alone (ADR 0014, decision 4): a device's
+        member, the first owner for the shared token (question 3) and for this PC (or NC_BRAIN_LOCAL_MEMBER)."""
+        d = device(request)
+        if d is not None:
+            if d["workspace_id"] != ws:
+                raise HTTPException(404, "no such workspace")
+            p = load_principal(brain.db, ws, d["member_id"], d["id"])
+            if p is None or not p.active:
+                raise HTTPException(410, REVOKED)
+        elif token_ok(request):
+            if not settings.legacy_token_owner:
+                raise HTTPException(403, "this phone was paired with the shared token: pair it again with a seat")
+            p = owner_principal(brain.db, ws)
+        else:
+            p = local_principal(ws)
+        as_member = request.query_params.get("as_member")
+        if as_member and request.method in ("GET", "HEAD") and p.level <= OWNER:
+            # the companion reading for a member: an owner (or this PC) may look as anyone, which only ever shows less
+            q = load_principal(brain.db, ws, as_member)
+            if q is None:
+                raise HTTPException(404, "no such member")
+            return q
+        return p
+
+    def view_of(request: Request, ws: str) -> View:
+        return View(brain.db, who(request, ws), ws)
+
+    def worker_only(request: Request) -> None:
+        """/v1/sync/*: between brains (the shared token, or this PC), never from a member's device."""
+        if device(request) is not None:
+            raise HTTPException(403, "sync is between brains")
+
     def ws_ok(ws: str) -> str:
         if brain.graph.workspace(ws) is None:
             raise HTTPException(404, "no such workspace")
         return ws
+
+    def ws_of(table: str, row_id: str) -> str:
+        r = brain.db.one(f"select workspace_id from {table} where id=?", (row_id,))
+        if r is None:
+            raise HTTPException(404, "not found")
+        return r["workspace_id"]
+
+    def need(p: Principal, action: str, what: str) -> None:
+        if p.decide(action) != ALLOW:
+            raise HTTPException(403, f"you cannot {what}")
 
     def guard(fn, *a, **k):
         try:
             return fn(*a, **k)
         except KeyError:
             raise HTTPException(404, "not found")
+        except PermissionError as e:
+            raise HTTPException(403, str(e) or "not allowed")
+        except CaptureConflict as e:
+            raise HTTPException(409, str(e))
         except GraphError as e:
             raise HTTPException(400, str(e))
 
+    def changed(res: dict, ok):
+        """An edit from the apps: refused (403 with the reason), held for approval (202 with the proposal), or done."""
+        if res.get("status") == "refused":
+            raise HTTPException(403, res["refused"][0]["reason"] if res.get("refused") else "not allowed")
+        if res.get("status") == "held" or (res.get("proposal") and not res.get("nodes")):
+            return JSONResponse({"proposal": res.get("proposal"), "detail": "waiting for approval"}, status_code=202)
+        return ok()
+
     A = [Depends(auth)]
+    W = [Depends(auth), Depends(worker_only)]
 
     @app.get("/health")
     def health():
@@ -242,175 +356,263 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
     # ---------------------------------------------------------------- workspaces, people, onboarding
     @r.post("/v1/workspaces", dependencies=A)
-    def create_ws(body: WorkspaceIn):
+    def create_ws(body: WorkspaceIn, request: Request):
+        if device(request) is not None:
+            raise HTTPException(403, "a new business is made on the owner's PC")
         return brain.graph.create_workspace(body.name, persona=body.persona, owner_name=body.owner_name,
                                             workspace_id=body.workspace_id)
 
     @r.get("/v1/workspaces", dependencies=A)
-    def list_ws():
+    def list_ws(request: Request):
         rows = brain.db.query("select w.id, w.name, w.persona, w.created_at, (select count(*) from nodes n where "
                               "n.workspace_id=w.id) as nodes from workspaces w order by w.created_at desc")
+        d = device(request)
+        if d is not None:  # a member's device knows one business, and only what it sees of it
+            v = view_of(request, d["workspace_id"])
+            rows = [{**w, "nodes": len(v.rows_ids | v.stub_ids) if not v.all else w["nodes"]}
+                    for w in rows if w["id"] == d["workspace_id"]]
         return rows
 
+    @r.get("/v1/workspaces/{ws}/me", dependencies=A)
+    def me(ws: str, request: Request):
+        """Who this app is acting as, and what it may offer them (the brain still decides every request)."""
+        p = who(request, ws_ok(ws))
+        return {"workspace_id": ws, "member_id": p.member_id, "name": p.name, "level": p.level,
+                "role": ROLES.get(p.level), "read_only": p.read_only, "scopes": list(p.scopes),
+                "device_id": p.device_id, "capabilities": capabilities(p)}
+
     @r.get("/v1/workspaces/{ws}/export", dependencies=A)
-    def export_ws(ws: str):
-        return guard(brain.export_workspace, ws)
+    def export_ws(ws: str, request: Request):
+        ws_ok(ws)
+        v = view_of(request, ws)
+        need(v.p, "export", "export this business")
+        return guard(brain.export_workspace, ws, v)
 
     @r.delete("/v1/workspaces/{ws}", dependencies=A)
-    def delete_ws(ws: str, confirm: str | None = None):
+    def delete_ws(ws: str, request: Request, confirm: str | None = None):
         """Removes the workspace and all its notes, tasks and audio. ?confirm=<workspace id> is required."""
         if confirm != ws:
             raise HTTPException(400, "add ?confirm=<workspace id> to remove a workspace")
+        need(who(request, ws_ok(ws)), "manage_workspace", "remove this business")
         return guard(brain.delete_workspace, ws)
 
     @r.get("/v1/workspaces/{ws}", dependencies=A)
-    def get_ws(ws: str):
+    def get_ws(ws: str, request: Request):
         row = brain.graph.workspace(ws_ok(ws)) or {}
-        return {**row, "root_id": brain.graph.root(ws)["id"], "members": brain.graph.members(ws)}
+        return {**row, "root_id": brain.graph.root(ws)["id"], "members": brain.members(ws, view_of(request, ws))}
 
     @r.post("/v1/workspaces/{ws}/onboard", dependencies=A)
-    def onboard(ws: str, body: OnboardIn):
-        ws_ok(ws)
+    def onboard(ws: str, body: OnboardIn, request: Request):
+        need(who(request, ws_ok(ws)), "manage_workspace", "lay out the business")
         return brain.onboard(ws, body.answer, body.apply)
 
     @r.post("/v1/workspaces/{ws}/members", dependencies=A)
-    def add_member(ws: str, body: MemberIn):
-        ws_ok(ws)
-        return {"id": brain.graph.add_member(ws, body.display_name, role=body.role, contact=body.contact,
-                                             person_node_id=body.person_node_id)}
+    def add_member(ws: str, body: MemberIn, request: Request):
+        need(who(request, ws_ok(ws)), "set_role", "add people")
+        return {"id": guard(brain.graph.add_member, ws, body.display_name, role=body.role, contact=body.contact,
+                            person_node_id=body.person_node_id)}
 
     @r.get("/v1/workspaces/{ws}/members", dependencies=A)
-    def members(ws: str):
-        return brain.graph.members(ws_ok(ws))
+    def members(ws: str, request: Request):
+        return brain.members(ws_ok(ws), view_of(request, ws))
+
+    @r.get("/v1/workspaces/{ws}/audit", dependencies=A)
+    def audit(ws: str, request: Request, limit: int = Query(default=200, ge=1, le=1000)):
+        """Who did what (ADR 0014): owners everything, managers their branches and their own, employees their own."""
+        return brain.audit(ws_ok(ws), view_of(request, ws), limit)
 
     # ---------------------------------------------------------------- the graph
     @r.get("/v1/workspaces/{ws}/tree", dependencies=A)
-    def tree(ws: str):
-        return brain.graph.tree(ws_ok(ws))
+    def tree(ws: str, request: Request):
+        v = view_of(request, ws_ok(ws))
+        return brain.graph.tree(ws, keep=None if v.all else v.node)
 
     @r.post("/v1/workspaces/{ws}/nodes", dependencies=A)
-    def add_node(ws: str, body: NodeIn):
-        ws_ok(ws)
-        return {"id": guard(brain.graph.add_node, ws, body.parent_id, body.title, body.kind, aliases=body.aliases)}
+    def add_node(ws: str, body: NodeIn, request: Request):
+        p = who(request, ws_ok(ws))
+        act = {"type": "create_node", "temp_id": "tmp:new", "parent_id": body.parent_id, "title": body.title,
+               "kind": body.kind, "aliases": body.aliases}
+        res = guard(brain.change, p, ws, [act], text=f'new branch "{body.title}"')
+        return changed(res, lambda: {"id": res["created"]["tmp:new"]})
+
+    def node_ws(request: Request, node_id: str) -> tuple[str, View]:
+        ws = ws_of("nodes", node_id)
+        v = view_of(request, ws)
+        if not v.node(node_id):
+            raise HTTPException(404, "not found")
+        return ws, v
 
     @r.get("/v1/nodes/{node_id}", dependencies=A)
-    def node(node_id: str):
-        return guard(brain.node_detail, node_id)
+    def node(node_id: str, request: Request):
+        _, v = node_ws(request, node_id)
+        return guard(brain.node_detail, node_id, v)
 
     @r.get("/v1/nodes/{node_id}/history", dependencies=A)
-    def node_history(node_id: str, limit: int = Query(default=100, ge=1, le=500)):
-        return guard(brain.history, node_id, limit)
+    def node_history(node_id: str, request: Request, limit: int = Query(default=100, ge=1, le=500)):
+        _, v = node_ws(request, node_id)
+        return guard(brain.history, node_id, limit, v)
 
     @r.patch("/v1/nodes/{node_id}", dependencies=A)
-    def patch_node(node_id: str, body: NodePatch):
-        if brain.graph.node(node_id) is None:
-            raise HTTPException(404, "not found")
+    def patch_node(node_id: str, body: NodePatch, request: Request):
+        ws, v = node_ws(request, node_id)
+        acts: list[dict] = []
         if body.title:
-            brain.graph.rename(node_id, body.title)
+            acts.append({"type": "rename_node", "node_id": node_id, "title": body.title})
         if body.parent_id:
-            guard(brain.graph.move, node_id, body.parent_id)
-        for a in body.add_aliases:
-            brain.graph.add_alias(node_id, a)
+            acts.append({"type": "move_node", "node_id": node_id, "parent_id": body.parent_id})
+        acts += [{"type": "add_alias", "node_id": node_id, "alias": a} for a in body.add_aliases]
         if body.attributes:
-            brain.set_attributes(node_id, body.attributes)
-        return brain.node_detail(node_id)
+            acts.append({"type": "update_attributes", "node_id": node_id, "set": body.attributes})
+        if not acts:
+            return guard(brain.node_detail, node_id, v)
+        res = guard(brain.change, v.p, ws, acts, text=f"edit {brain.graph.node(node_id)['title']}")
+        return changed(res, lambda: brain.node_detail(node_id, View(brain.db, v.p, ws)))
 
     @r.delete("/v1/nodes/{node_id}", dependencies=A)
-    def delete_node(node_id: str):
-        guard(brain.graph.delete_subtree, node_id)
-        return {"deleted": node_id}
+    def delete_node(node_id: str, request: Request):
+        ws, v = node_ws(request, node_id)
+        if brain.graph.node(node_id)["kind"] == "root":
+            raise HTTPException(400, "cannot delete")
+        res = guard(brain.change, v.p, ws, [{"type": "delete_node", "node_id": node_id}],
+                    text=f"delete {brain.graph.node(node_id)['title']}")
+        return changed(res, lambda: {"deleted": node_id})
+
+    @r.post("/v1/nodes/{node_id}/visibility", dependencies=A)
+    def set_visibility(node_id: str, body: VisibilityIn, request: Request):
+        """Who may see a branch: all, manager (managers and owners), owner (owners only). ADR 0014, decision 15."""
+        ws, v = node_ws(request, node_id)
+        res = guard(brain.change, v.p, ws, [{"type": "set_visibility", "node_id": node_id,
+                                             "visibility": body.visibility}],
+                    text=f"who can see {brain.graph.node(node_id)['title']}")
+        return changed(res, lambda: brain.node_detail(node_id, View(brain.db, v.p, ws)))
 
     # ---------------------------------------------------------------- captures
     @r.post("/v1/workspaces/{ws}/captures", dependencies=A)
-    def capture_text(ws: str, body: CaptureIn):
-        ws_ok(ws)
-        r = brain.register_capture(ws, text=body.text, capture_id=body.capture_id, recorded_at=body.recorded_at,
-                                   source=body.source, lang_hint=body.lang_hint, geo=body.geo, enqueue=not body.wait)
+    def capture_text(ws: str, body: CaptureIn, request: Request):
+        p = who(request, ws_ok(ws))
+        r = guard(brain.register_capture, ws, text=body.text, capture_id=body.capture_id, recorded_at=body.recorded_at,
+                  source=body.source, lang_hint=body.lang_hint, geo=body.geo, enqueue=not body.wait, principal=p)
         if body.wait and not r["duplicate"]:
             return brain.process(r["capture_id"])
-        return brain.capture_summary(r["capture_id"]) if r["duplicate"] else r
+        return brain.capture_summary(r["capture_id"], View(brain.db, p, ws)) if r["duplicate"] else r
 
     @r.post("/v1/workspaces/{ws}/captures/audio", dependencies=A)
     async def capture_audio(ws: str, request: Request, capture_id: str | None = None, recorded_at: str | None = None,
                             source: str = "phone", lang_hint: str | None = None):
-        ws_ok(ws)
+        p = who(request, ws_ok(ws))
         audio = await request.body()
         if not audio:
             raise HTTPException(400, "empty body")
         if len(audio) > 25 * 1024 * 1024:
             raise HTTPException(413, "audio over 25 MB")
-        return brain.register_capture(ws, audio=audio, mime=request.headers.get("content-type"), capture_id=capture_id,
-                                      recorded_at=recorded_at, source=source, lang_hint=lang_hint)
+        return guard(brain.register_capture, ws, audio=audio, mime=request.headers.get("content-type"),
+                     capture_id=capture_id, recorded_at=recorded_at, source=source, lang_hint=lang_hint, principal=p)
+
+    def capture_view(request: Request, cid: str) -> View:
+        return view_of(request, ws_of("captures", cid))
 
     @r.get("/v1/captures/{cid}", dependencies=A)
-    def capture(cid: str):
-        return guard(brain.capture_summary, cid)
+    def capture(cid: str, request: Request):
+        return guard(brain.capture_summary, cid, capture_view(request, cid))
 
     @r.get("/v1/captures/{cid}/audio", dependencies=A)
-    def capture_audio_file(cid: str):
+    def capture_audio_file(cid: str, request: Request):
         """The recording, for playback in the node's history. <audio src> cannot send a header: ?token= on a GET."""
         from fastapi.responses import FileResponse
-        p = guard(brain.capture_audio, cid)
+        p = guard(brain.capture_audio, cid, capture_view(request, cid))
         return FileResponse(p, media_type=EXT_TYPES.get(p.suffix.lower(), "application/octet-stream"),
                             headers={"Cache-Control": "private, max-age=3600"})
 
     @r.post("/v1/captures/{cid}/undo", dependencies=A)
-    def undo(cid: str):
-        return guard(brain.undo, cid)
+    def undo(cid: str, request: Request):
+        return guard(brain.undo, cid, who(request, ws_of("captures", cid)))
 
     # ---------------------------------------------------------------- inbox, tasks, alerts, notifications
     @r.get("/v1/workspaces/{ws}/inbox", dependencies=A)
-    def inbox(ws: str):
-        return brain.db.query("select * from inbox where workspace_id=? and state='open' order by created_at", (ws_ok(ws),))
+    def inbox(ws: str, request: Request):
+        return brain.inbox(ws_ok(ws), view_of(request, ws))
 
     @r.post("/v1/inbox/{item_id}/resolve", dependencies=A)
-    def resolve(item_id: str, body: ResolveIn):
-        return guard(brain.resolve_inbox, item_id, body.node_id)
+    def resolve(item_id: str, body: ResolveIn, request: Request):
+        """A held note placed on a branch (node_id), or a proposal approved or rejected (decision, ADR 0014)."""
+        p = who(request, ws_of("inbox", item_id))
+        return guard(brain.resolve_inbox, item_id, body.node_id, principal=p, decision=body.decision,
+                     reason=body.reason)
 
     @r.post("/v1/inbox/{item_id}/dismiss", dependencies=A)
-    def dismiss(item_id: str):
-        brain.dismiss_inbox(item_id)
+    def dismiss(item_id: str, request: Request, body: DismissIn | None = None):
+        p = who(request, ws_of("inbox", item_id))
+        guard(brain.dismiss_inbox, item_id, principal=p, reason=body.reason if body else None)
         return {"dismissed": item_id}
 
     @r.get("/v1/workspaces/{ws}/tasks", dependencies=A)
-    def tasks(ws: str, state: str | None = "open", assignee: str | None = None):
-        return brain.tasks(ws_ok(ws), state or None, assignee)
+    def tasks(ws: str, request: Request, state: str | None = "open", assignee: str | None = None):
+        return brain.tasks(ws_ok(ws), state or None, assignee, view_of(request, ws))
 
     @r.patch("/v1/tasks/{task_id}", dependencies=A)
-    def patch_task(task_id: str, body: TaskPatch):
-        return guard(brain.update_task, task_id, state=body.state, assignee_member=body.assignee_member,
-                     due_at=body.due_at)
+    def patch_task(task_id: str, body: TaskPatch, request: Request):
+        ws = ws_of("tasks", task_id)
+        p = who(request, ws)
+        t = brain.db.one("select node_id from tasks where id=?", (task_id,))
+        if not View(brain.db, p, ws).rows(t["node_id"]):
+            raise HTTPException(404, "not found")
+        out = guard(brain.update_task, task_id, state=body.state, assignee_member=body.assignee_member,
+                    due_at=body.due_at, principal=p)
+        if out.get("proposal"):
+            return JSONResponse({"proposal": out["proposal"], "detail": "waiting for approval"}, status_code=202)
+        return out
 
     @r.get("/v1/workspaces/{ws}/alerts", dependencies=A)
-    def alerts(ws: str, open_only: bool = True):
-        sql = "select * from alerts where workspace_id=?" + (" and resolved_at is null" if open_only else "")
-        return brain.db.query(sql + " order by created_at desc", (ws_ok(ws),))
+    def alerts(ws: str, request: Request, open_only: bool = True):
+        return brain.alerts(ws_ok(ws), open_only, view_of(request, ws))
 
     @r.post("/v1/alerts/{alert_id}/resolve", dependencies=A)
-    def resolve_alert(alert_id: str):
-        return guard(brain.resolve_alert, alert_id)
+    def resolve_alert(alert_id: str, request: Request):
+        ws = ws_of("alerts", alert_id)
+        p = who(request, ws)
+        a = brain.db.one("select node_id from alerts where id=?", (alert_id,))
+        if not View(brain.db, p, ws).rows(a["node_id"]):
+            raise HTTPException(404, "not found")
+        out = guard(brain.resolve_alert, alert_id, p)
+        if out.get("proposal"):
+            return JSONResponse({**out, "detail": "waiting for approval"}, status_code=202)
+        return out
 
     @r.get("/v1/workspaces/{ws}/notifications", dependencies=A)
-    def notifications(ws: str, member: str | None = None, unsent: bool = True):
-        sql, args = "select * from notifications where workspace_id=?", [ws_ok(ws)]
-        if member:
-            sql += " and member_id=?"
-            args.append(member)
-        if unsent:
-            sql += " and sent_at is null"
-        return brain.db.query(sql + " order by created_at", args)
+    def notifications(ws: str, request: Request, member: str | None = None, unsent: bool = True):
+        return brain.notifications(ws_ok(ws), member, unsent, view_of(request, ws))
 
     @r.get("/v1/workspaces/{ws}/digest", dependencies=A)
-    def digest(ws: str, focus: str | None = None):
-        return brain.digest(ws_ok(ws), focus=focus)
+    def digest(ws: str, request: Request, focus: str | None = None):
+        return brain.digest(ws_ok(ws), focus=focus, view=view_of(request, ws))
+
+    @r.post("/v1/workspaces/{ws}/ask", dependencies=A)
+    async def ask(ws: str, body: AskIn, request: Request):
+        """The companion, for a member on another device (ADR 0014, decision 13): the brain checks who is asking and
+        that the node they have open is theirs to see, then asks the companion on this PC as that member."""
+        p = who(request, ws_ok(ws))
+        if body.context_node_id and not View(brain.db, p, ws).rows(body.context_node_id):
+            raise HTTPException(404, "not found")
+        if not settings.companion_url:
+            raise HTTPException(503, "no companion on this brain")
+        first = owner_principal(brain.db, ws).member_id
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as c:
+            res = await c.post(f"{settings.companion_url.rstrip('/')}/v1/{ws}/chat",
+                               json={"text": body.text, "context_node_id": body.context_node_id,
+                                     **({"as_member": p.member_id} if p.member_id and p.member_id != first else {})})
+        if res.status_code >= 400:
+            raise HTTPException(502, "the companion did not answer")
+        return res.json()
 
     # ---------------------------------------------------------------- mind map (Phase 2)
     @r.get("/v1/workspaces/{ws}/mindmap", dependencies=A)
-    def mindmap(ws: str, tasks: bool = True, notes: int = Query(default=3, ge=0, le=20)):
+    def mindmap(ws: str, request: Request, tasks: bool = True, notes: int = Query(default=3, ge=0, le=20)):
         """The whole map, UI-ready: root, categories with roll-ups, entities with status, echo dot, decay, reminders
         and progress, open tasks as leaves, People / Delegation; edges belongs_to_category, has_task, assigned_to,
-        related_to. `cursor` is the last live-event id: open the event stream with Last-Event-ID = cursor."""
-        return brain.mindmap(ws_ok(ws), tasks=tasks, notes_per_node=notes)
+        related_to. `cursor` is the last live-event id: open the event stream with Last-Event-ID = cursor.
+        ADR 0014: as the caller sees it."""
+        return brain.mindmap(ws_ok(ws), view=view_of(request, ws), tasks=tasks, notes_per_node=notes)
 
     # ---------------------------------------------------------------- one capture endpoint (Phase 2)
     async def _capture_any(ws: str, request: Request):
@@ -419,6 +621,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         (fields as query parameters). context_node_id: the node open on the map while recording; it and its
         neighbours are preferred when the brain decides where the note goes."""
         ws_ok(ws)
+        principal = who(request, ws)
         ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
         fields: dict = {k: v for k, v in request.query_params.items() if k != "token"}
         audio = mime = None
@@ -467,12 +670,12 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         reg = await run_in_threadpool(guard, brain.register_capture, ws, text=None if audio is not None else text,
                                       audio=audio, mime=mime, capture_id=body.capture_id, recorded_at=body.recorded_at,
                                       source=body.source, lang_hint=body.lang_hint, geo=body.geo,
-                                      enqueue=not wait, context_node_id=body.context_node_id)
+                                      enqueue=not wait, context_node_id=body.context_node_id, principal=principal)
         cid = reg["capture_id"]
         links = {"status_url": f"/v1/captures/{cid}", "events_url": f"/v1/workspaces/{ws}/events/stream",
                  "context_node_id": body.context_node_id}
         if reg["duplicate"]:
-            return {**brain.capture_summary(cid), "duplicate": True, **links}
+            return {**brain.capture_summary(cid, View(brain.db, principal, ws)), "duplicate": True, **links}
         if wait:
             try:
                 res = await run_in_threadpool(brain.process, cid)
@@ -499,29 +702,31 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         return brain.sync_status(ws_ok(ws))
 
     @r.get("/v1/workspaces/{ws}/keyterms", dependencies=A)
-    def keyterms(ws: str):
-        return {"keyterms": brain.keyterms(ws_ok(ws))}
+    def keyterms(ws: str, request: Request):
+        return {"keyterms": brain.keyterms(ws_ok(ws), view_of(request, ws))}
 
     @r.post("/v1/workspaces/{ws}/maintenance", dependencies=A)
-    def maintenance(ws: str):
-        return {"decayed": brain.graph.decay(ws_ok(ws))}
+    def maintenance(ws: str, request: Request):
+        need(who(request, ws_ok(ws)), "manage_workspace", "run maintenance")
+        return {"decayed": brain.graph.decay(ws)}
 
     # ---------------------------------------------------------------- multi-worker sync (this brain as a hub)
-    @r.get("/v1/sync/status", dependencies=A)
+    @r.get("/v1/sync/status", dependencies=W)
     def sync_status():
         return {"ok": True, **brain.sync.status()}
 
-    @r.post("/v1/sync/push", dependencies=A)
+    @r.post("/v1/sync/push", dependencies=W)
     def sync_push(body: SyncPushIn):
-        """Another worker (a desktop, an Edge AI Node) sends the changes it made."""
+        """Another worker (a desktop, an Edge AI Node) sends the changes it made. ADR 0014: each is checked against its
+        author's role here, now; one that is not allowed is not applied, and goes back with the reason and this hub's
+        row so the sender can put its own back."""
         res = brain.journal.receive(body.changes, via=body.worker,
-                                    on_applied=lambda ids: brain.graph.rollup(sorted(ids)))
-        for ws in res["workspaces"]:
-            ids = [n for n in res["touched"] if (brain.graph.node(n) or {}).get("workspace_id") == ws]
-            brain.broker.publish(ws, "sync.applied", {"pulled": res["applied"], "node_ids": ids, "from": body.worker})
+                                    on_applied=lambda ids: brain.graph.rollup(sorted(ids)), check=True,
+                                    propose=brain.sync_proposal)
+        brain.after_sync(res, body.worker)
         return {"hub": brain.journal.worker_id, **{k: v for k, v in res.items() if k != "touched"}}
 
-    @r.get("/v1/sync/pull", dependencies=A)
+    @r.get("/v1/sync/pull", dependencies=W)
     def sync_pull(worker: str, since: int = Query(default=0, ge=0), limit: int = Query(default=500, ge=1, le=5000),
                   workspaces: str | None = None):
         """Another worker asks for everything after its cursor that it did not make itself."""
@@ -529,12 +734,12 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         changes, cursor, more = brain.journal.to_serve(worker, since, limit, ws)
         return {"hub": brain.journal.worker_id, "changes": [c.as_dict() for c in changes], "cursor": cursor, "more": more}
 
-    @r.post("/v1/sync/ack", dependencies=A)
+    @r.post("/v1/sync/ack", dependencies=W)
     def sync_ack(body: SyncAckIn):
         """A worker has applied everything up to its pull cursor: the notes it took from here are synced."""
         return {"hub": brain.journal.worker_id, "marked": brain.journal.ack(body.worker, body.cursor, body.workspaces)}
 
-    @r.post("/v1/sync/now", dependencies=A)
+    @r.post("/v1/sync/now", dependencies=W)
     async def sync_now():
         return await run_in_threadpool(brain.sync.run_once)
 
@@ -545,21 +750,26 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                      types: str | None = None, limit: int | None = Query(default=None, ge=1),
                      last_event_header: str | None = Header(default=None, alias="Last-Event-ID")):
         """capture.queued, stt.transcribing, stt.completed, router.resolving, action.applied, inbox.created,
-        capture.completed, capture.failed, action.undone, node.updated, task.updated, alert.updated, inbox.resolved.
-        Reconnect with Last-Event-ID (header, or ?last_event_id=) to get what was missed. ?types=a,b filters by
-        name or prefix (types=stt,action); ?limit=n closes the stream after n events."""
+        capture.completed, capture.failed, action.undone, node.updated, task.updated, alert.updated, inbox.resolved,
+        action.refused. Reconnect with Last-Event-ID (header, or ?last_event_id=) to get what was missed. ?types=a,b
+        filters by name or prefix (types=stt,action); ?limit=n closes the stream after n events. ADR 0014: only what
+        the caller may see; a change to their role or scope closes the stream, and they reconnect with the new view."""
         ws_ok(ws)
+        view = view_of(request, ws)
         start = last_event_id
         if start is None and last_event_header and last_event_header.strip().isdigit():
             start = int(last_event_header.strip())
         want = [t.strip() for t in (types or "").split(",") if t.strip()]
 
-        def wanted(m: dict) -> bool:
-            return not want or any(m["type"] == w or m["type"].startswith(w + ".") for w in want)
+        def wanted(m: dict) -> dict | None:
+            if want and not any(m["type"] == w or m["type"].startswith(w + ".") for w in want):
+                return None
+            return for_view(m, view)
 
         q = brain.broker.subscribe(ws)  # subscribe before replay, so nothing falls in between
 
         async def gen():
+            nonlocal view
             sent, last = 0, start or 0
             if last > brain.broker.last_id:  # an id this brain never sent (it restarted): everything new is wanted
                 last = 0
@@ -568,8 +778,9 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                 backlog = brain.broker.since(ws, start) if start is not None else []
                 for msg in backlog:
                     last = max(last, msg["id"])
-                    if wanted(msg):
-                        yield brain.broker.sse(msg)
+                    out = wanted(msg)
+                    if out is not None:
+                        yield brain.broker.sse(out)
                         sent += 1
                         if limit and sent >= limit:
                             return
@@ -577,12 +788,22 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                     try:
                         msg = await asyncio.wait_for(q.get(), timeout=15)
                     except asyncio.TimeoutError:
+                        if not view.all or view.p.level != 0:
+                            now_p = load_principal(brain.db, ws, view.p.member_id) if view.p.member_id else view.p
+                            if now_p is None or (now_p.level, now_p.scopes, now_p.active, now_p.read_only) != \
+                                    (view.p.level, view.p.scopes, view.p.active, view.p.read_only):
+                                return  # their role changed: the app reconnects and gets the new view
+                            if not view.all:
+                                view.refresh()
                         yield f": keep-alive {int(time.time())}\n\n"
                         continue
-                    if msg["id"] <= last or not wanted(msg):
+                    if msg["id"] <= last:
                         continue
                     last = msg["id"]
-                    yield brain.broker.sse(msg)
+                    out = wanted(msg)
+                    if out is None:
+                        continue
+                    yield brain.broker.sse(out)
                     sent += 1
                     if limit and sent >= limit:
                         return
@@ -597,7 +818,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     if settings.upload_dir is None:
         from pathlib import Path as _P
         settings.upload_dir = str(_P(settings.audio_dir).parent / "uploads")
-    tr = tus.router(brain, settings, check_auth, ws_ok)
+    tr = tus.router(brain, settings, check_auth, ws_ok, who)
     r.include_router(tr)
 
     @r.get("/v1/pairing")

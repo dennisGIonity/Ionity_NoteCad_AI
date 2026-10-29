@@ -11,6 +11,10 @@ from the ring buffer. Event names the map UI listens for (Phase 2):
   -> router.resolving {idx, text} -> action.applied {node_ids} | inbox.created {inbox_id, options}
   -> capture.completed {state}          and later  action.undone {node_ids}      or  capture.failed {error}
   node.updated {status, counts}         task.updated, alert.updated, inbox.resolved
+  action.refused {refused}              (ADR 0014: what the speaker may not do, and why)
+
+ADR 0014: a message carries who it is about (`_author`, `_route`: kept here, never sent) and each stream passes only
+what its member may see (`for_view`).
 """
 from __future__ import annotations
 
@@ -23,6 +27,12 @@ from collections import deque
 
 from .common import now_iso
 
+# what only the speaker (and the owners) hear about: their own capture on its way, and what they may not do
+AUTHOR_ONLY = {"capture.queued", "stt.transcribing", "stt.completed", "router.resolving", "capture.completed",
+               "capture.failed", "action.refused", "sync.refused"}
+NODE_LISTS = ("node_ids", "affected_node_ids", "created_node_ids", "map_node_ids")
+NODE_EVENTS = {"action.applied", "action.undone", "sync.applied", "node.updated", "task.updated", "alert.updated"}
+
 
 def _offer(q: asyncio.Queue, msg: dict) -> None:
     """Runs on the subscriber's loop: a client too slow to drain 1,000 events misses some (it can resync with
@@ -31,6 +41,46 @@ def _offer(q: asyncio.Queue, msg: dict) -> None:
         q.put_nowait(msg)
     except asyncio.QueueFull:
         pass
+
+
+def for_view(msg: dict, view) -> dict | None:
+    """The message as this viewer may see it, or None. Node lists are cut to what they see; an event about one node
+    they cannot see is dropped; anything not known to be safe goes to owners only."""
+    if view.all:
+        return msg
+    me = view.p.member_id
+    kind = msg["type"]
+    if kind in AUTHOR_ONLY:
+        return msg if me and msg.get("_author") == me else None
+    if kind.startswith("inbox."):
+        return msg if me and (msg.get("_author") == me or me in (msg.get("_route") or [])) else None
+    if kind == "workspace.deleted":
+        return msg
+    if kind not in NODE_EVENTS:
+        return None
+    if msg.get("node_id") and not _sees(view, msg["node_id"]):
+        return None
+    out = dict(msg)
+    had = False
+    for k in NODE_LISTS:
+        if k in out:
+            had = had or bool(out[k])
+            out[k] = [n for n in out[k] or [] if _sees(view, n)]
+    if "removed_node_ids" in out:  # gone now: the viewer had them if they could see them before
+        out["removed_node_ids"] = [n for n in out["removed_node_ids"] or [] if view.node(n)]
+    if "nodes" in out:
+        out["nodes"] = [n for n in out["nodes"] or [] if _sees(view, n.get("id")) and _sees(view, n.get("map_id"))]
+    if had and not any(out.get(k) for k in NODE_LISTS) and kind != "sync.applied":
+        return None
+    return out
+
+
+def _sees(view, nid: str | None) -> bool:
+    if not nid:
+        return False
+    if nid not in view.known and nid not in view.rows_ids:
+        view.refresh()  # a node made after the stream opened
+    return view.node(nid)
 
 
 class Broker:
@@ -56,9 +106,12 @@ class Broker:
         with self._lock:
             self._subs = [s for s in self._subs if s[2] is not q]
 
-    def publish(self, ws: str, kind: str, data: dict) -> dict:
+    def publish(self, ws: str, kind: str, data: dict, *, author: str | None = None,
+                route: list[str] | None = None) -> dict:
+        """author: the member whose capture or change this is; route: the members an Inbox item is for."""
         with self._lock:
-            msg = {"id": next(self._ids), "type": kind, "workspace_id": ws, "at": now_iso(), **data}
+            msg = {"id": next(self._ids), "type": kind, "workspace_id": ws, "at": now_iso(), **data,
+                   "_author": author, "_route": route}
             self.recent.append(msg)
             subs = list(self._subs)
         for sws, loop, q in subs:
@@ -84,4 +137,5 @@ class Broker:
 
     @staticmethod
     def sse(msg: dict) -> str:
-        return f"id: {msg['id']}\nevent: {msg['type']}\ndata: {json.dumps(msg, ensure_ascii=False, default=str)}\n\n"
+        public = {k: v for k, v in msg.items() if not k.startswith("_")}
+        return f"id: {msg['id']}\nevent: {msg['type']}\ndata: {json.dumps(public, ensure_ascii=False, default=str)}\n\n"

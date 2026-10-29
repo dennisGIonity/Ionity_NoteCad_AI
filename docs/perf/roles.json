@@ -1,0 +1,35 @@
+{
+  "nodes": 2000,
+  "tasks": 283,
+  "alerts": 63,
+  "runs": 15,
+  "restrict_finance_ms": 3.46,
+  "restrict_branch_ms": 14.84,
+  "branch_nodes": 349,
+  "viewers": [
+    {
+      "viewer": "owner",
+      "view_ms": 0.0,
+      "mindmap_ms": 70.02,
+      "retrieval_ms": 71.9,
+      "digest_ms": 142.31,
+      "nodes_seen": 2287
+    },
+    {
+      "viewer": "employee",
+      "view_ms": 3.64,
+      "mindmap_ms": 79.01,
+      "retrieval_ms": 62.4,
+      "digest_ms": 136.76,
+      "nodes_seen": 2217
+    },
+    {
+      "viewer": "scoped employee",
+      "view_ms": 6.07,
+      "mindmap_ms": 38.42,
+      "retrieval_ms": 42.84,
+      "digest_ms": 39.02,
+      "nodes_seen": 331
+    }
+  ]
+}

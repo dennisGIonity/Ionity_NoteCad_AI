@@ -272,6 +272,27 @@ class Database:
             self._local.depth = 0
             self._lock.release()
 
+    @contextmanager
+    def acting(self, member_id: str | None, level: int | None) -> Iterator[None]:
+        """Inside tx(): the member this transaction's writes are journaled for (ADR 0014, sync.nc_sync_annotate).
+        SQLite: rows in sync_state, removed before the commit; Postgres: settings local to the transaction."""
+        if member_id is None and level is None:
+            yield
+            return
+        if self.kind == "postgres":
+            self.execute("select set_config('notecad.member', ?, true), set_config('notecad.level', ?, true)",
+                         (member_id or "", "" if level is None else str(level)))
+            yield
+            return
+        keys = [(k, v) for k, v in (("actor_member", member_id), ("actor_level", level)) if v is not None]
+        self.execute("delete from sync_state where key in ('actor_member', 'actor_level')")
+        for k, v in keys:
+            self.execute("insert into sync_state(key, value) values (?, ?)", (k, str(v)))
+        try:
+            yield
+        finally:
+            self.execute("delete from sync_state where key in ('actor_member', 'actor_level')")
+
     def execute(self, sql: str, params: tuple | list = ()) -> int:
         with self._lock:
             cur = self._conn.execute(self._sql(sql), tuple(params))

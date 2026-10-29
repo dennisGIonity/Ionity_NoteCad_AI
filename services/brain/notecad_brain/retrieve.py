@@ -12,6 +12,7 @@ import numpy as np
 from rapidfuzz import fuzz
 
 from .graph import Graph
+from .permissions import View
 
 STOP = {"the", "a", "an", "and", "of", "in", "on", "at", "to", "is", "was", "die", "en", "van", "op", "my",
         "our", "ons", "just", "net", "it", "its", "this", "that"}
@@ -105,16 +106,21 @@ class Retriever:
             out.append((e["dst_id"] if e["src_id"] == node_id else e["src_id"], e["edge_type"]))
         return out
 
-    def candidates(self, ws: str, event: str, anchor: str | None = None) -> list[dict]:
+    def candidates(self, ws: str, event: str, anchor: str | None = None, view: View | None = None) -> list[dict]:
         """anchor: the node the owner had open on the map while recording. It and its 1-hop neighbours are
-        boosted, so "needs new tyres" said on the Tractors node lands there, but a thing named outright still wins."""
-        nodes = [n for n in self.graph.nodes(ws) if n["kind"] != "root"]
+        boosted, so "needs new tyres" said on the Tractors node lands there, but a thing named outright still wins.
+        view (ADR 0014): only nodes the speaker can see are scored or returned, so no model prompt built for them
+        holds anything else. The vectors are still kept for the whole workspace (one matrix, shared by everyone)."""
+        everything = [n for n in self.graph.nodes(ws) if n["kind"] != "root"]
+        if not everything:
+            return []
+        paths = Graph.paths(everything)  # the root is not in nodes, and is never part of a path
+        aliases = self.graph.all_aliases(ws)
+        index, mat = self._ensure_embeddings(ws, everything, paths, aliases)
+        nodes = [n for n in everything if view is None or view.rows(n["id"])]
         if not nodes:
             return []
         by_id = {n["id"]: n for n in nodes}
-        paths = Graph.paths(nodes)  # the root is not in nodes, and is never part of a path
-        aliases = self.graph.all_aliases(ws)
-        index, mat = self._ensure_embeddings(ws, nodes, paths, aliases)
         q = self.embedder.embed_query(event) if (self.embedder is not None and mat is not None) else None
         sims = mat @ q if q is not None and mat is not None else None
         ev_nums = set(_NUM.findall(event))
@@ -142,7 +148,7 @@ class Retriever:
         # one hop: channel children (Maintenance, Health Alerts), cross-links and the parent of the best hits
         for score, nid, _, _ in top[:3]:
             for c in self.graph.children(nid):
-                if c["kind"] == "channel" and c["id"] not in picked:
+                if c["kind"] == "channel" and c["id"] not in picked and c["id"] in by_id:
                     picked[c["id"]] = {"score": round(score * 0.9, 3), "fuzzy": 0, "embedding": 0, "via": f"channel of {by_id[nid]['title']}"}
             for e in self.graph.db.query("select src_id, dst_id, edge_type from edges where src_id=? or dst_id=?", (nid, nid)):
                 other = e["dst_id"] if e["src_id"] == nid else e["src_id"]

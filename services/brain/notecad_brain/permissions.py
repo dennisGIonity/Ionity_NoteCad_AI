@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .common import STATUS_RANK
+
 SYSTEM, OWNER, MANAGER, EMPLOYEE = 0, 1, 2, 3
 LEVELS = {"system": SYSTEM, "owner": OWNER, "manager": MANAGER, "employee": EMPLOYEE}
 ROLES = {v: k for k, v in LEVELS.items()}
@@ -100,6 +102,306 @@ def member_role(role: str, user_id: str | None = None) -> tuple[str, int, int]:
     if role not in LEVELS or role == "system":
         raise ValueError(f"unknown role {role!r}")
     return role, LEVELS[role], 0
+
+
+# ==================================================================== who is asking, and what they see
+@dataclass(frozen=True)
+class Principal:
+    """Who a request or a change acts for: a member of one workspace, or the brain itself (level 0). Taken from the
+    credential alone (ADR 0014, decision 4): nothing a client says about itself is believed."""
+    level: int
+    workspace_id: str | None = None
+    member_id: str | None = None
+    read_only: bool = False
+    scopes: tuple[str, ...] = ()  # the paths of the member's scope roots
+    device_id: str | None = None
+    name: str | None = None
+    active: bool = True
+
+    def decide(self, action: str, *, in_scope: bool = True, own: bool = False, assigned: bool = False) -> str:
+        if not self.active:  # a revoked member's writes wait for an owner (ADR 0014, question 2); reads stop
+            return REFUSE if action in READS else PROPOSE
+        return decide(self.level, action, in_scope=in_scope, own=own, assigned=assigned, read_only=self.read_only)
+
+
+SYSTEM_PRINCIPAL = Principal(SYSTEM)
+
+
+def load_principal(db, ws: str, member_id: str | None, device_id: str | None = None) -> Principal | None:
+    if not member_id:
+        return None
+    m = db.one("select * from members where id=? and workspace_id=?", (member_id, ws))
+    if m is None:
+        return None
+    scopes = tuple(sorted(r["path"] for r in db.query(
+        "select n.path from member_scopes s join nodes n on n.id=s.node_id where s.member_id=? and s.workspace_id=?",
+        (member_id, ws))))
+    return Principal(int(m["level"]), ws, m["id"], bool(m["read_only"]), scopes, device_id, m["display_name"],
+                     m["status"] == "active")
+
+
+def owner_principal(db, ws: str) -> Principal:
+    """The workspace's first active owner: this PC's own app, and phones paired with the shared token for one more
+    release (ADR 0014, question 3). The brain itself when a workspace has no owner row."""
+    r = db.one("select id from members where workspace_id=? and level=1 and status='active' order by created_at", (ws,))
+    return (load_principal(db, ws, r["id"]) if r else None) or Principal(SYSTEM, ws)
+
+
+def under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root + "/")
+
+
+def sees_row(p: Principal, path: str, eff_level: int) -> bool:
+    """May this principal see what hangs off a node (its notes, tasks, alerts)? Without loading a whole View."""
+    if p.level <= OWNER:
+        return p.active or p.level == SYSTEM
+    if not p.active or p.level > eff_level:
+        return False
+    return p.level < EMPLOYEE or not p.scopes or any(under(path, s) for s in p.scopes)
+
+
+class View:
+    """What one principal sees in one workspace, worked out once (per request, per change batch) from every node's
+    effective level and path. The brain itself and owners see everything and skip the work.
+
+    rows: the node and everything hanging off it. stub: an ancestor of a scoped employee's scope root, shown by title
+    and kind only so their tree stays connected."""
+
+    def __init__(self, db, p: Principal, ws: str):
+        self.db, self.p, self.ws = db, p, ws
+        self.all = p.level == SYSTEM or (p.level == OWNER and p.active)
+        self.rows_ids: set[str] = set()
+        self.stub_ids: set[str] = set()
+        self.known: set[str] = set()
+        self.paths: dict[str, str] = {}
+        if not self.all:
+            self.refresh()
+
+    def refresh(self) -> "View":
+        rows = self.db.query("select id, path, eff_level from nodes where workspace_id=?", (self.ws,))
+        rows_ids, stubs = set(), set()
+        for r in rows:
+            if not self.p.active or self.p.level > r["eff_level"]:
+                continue
+            if not self.scoped or any(under(r["path"], s) for s in self.p.scopes):
+                rows_ids.add(r["id"])
+            elif any(under(s, r["path"]) for s in self.p.scopes):
+                stubs.add(r["id"])
+        self.rows_ids, self.stub_ids = rows_ids, stubs
+        self.known = {r["id"] for r in rows}
+        self.paths = {r["id"]: r["path"] for r in rows}
+        return self
+
+    @property
+    def scoped(self) -> bool:
+        """An employee bound to subtrees sees only those (a scoped manager sees the map; only their rights are bound)."""
+        return self.p.level >= EMPLOYEE and bool(self.p.scopes)
+
+    def node(self, nid: str | None) -> bool:
+        return bool(nid) and (self.all or nid in self.rows_ids or nid in self.stub_ids)
+
+    def rows(self, nid: str | None) -> bool:
+        return bool(nid) and (self.all or nid in self.rows_ids)
+
+    def stub(self, nid: str | None) -> bool:
+        return not self.all and nid in self.stub_ids
+
+    def edge(self, src: str, dst: str) -> bool:
+        return self.rows(src) and self.rows(dst)
+
+    def capture(self, cap: dict) -> bool:
+        """A capture's text and audio: its author, or someone who sees the strictest node it touched."""
+        if self.all:
+            return True
+        if cap.get("member_id") and cap["member_id"] == self.p.member_id:
+            return True
+        return self.p.active and self.p.level <= (cap.get("eff_level") or EMPLOYEE) and not self.scoped
+
+    def in_scope(self, nid: str | None) -> bool:
+        """Inside the branches this principal manages: owners everywhere, a manager in their scope (or everywhere)."""
+        if self.p.level <= OWNER:
+            return True
+        if self.p.level != MANAGER or not self.p.active:
+            return False
+        if not self.p.scopes:
+            return True
+        path = self.paths.get(nid or "") or (self.db.one("select path from nodes where id=?", (nid,)) or {}).get("path")
+        return bool(path) and any(under(path, s) for s in self.p.scopes)
+
+    def fact(self, visibility: str | None) -> bool:
+        return self.all or VISIBILITY.get(visibility or "all", EMPLOYEE) >= self.p.level
+
+    def inbox(self, item: dict) -> bool:
+        if self.all:
+            return True
+        me = self.p.member_id
+        return bool(me) and (item.get("author_member_id") == me or me in (_ids(item.get("route_member_ids"))))
+
+    def audit(self, row: dict) -> bool:
+        """action_log: owners everything, managers their scope and their own, employees their own."""
+        if self.all:
+            return True
+        if row.get("member_id") and row["member_id"] == self.p.member_id:
+            return True
+        return self.p.level == MANAGER and self.rows(row.get("node_id")) and self.in_scope(row.get("node_id"))
+
+    def member(self, m: dict) -> dict:
+        """Everyone sees who is in the business; contact details and logins only managers and owners."""
+        if self.p.level <= MANAGER:
+            return m
+        return {**m, "contact": None, "user_id": None}
+
+
+def _ids(v) -> list[str]:
+    import json
+    if not v:
+        return []
+    if isinstance(v, list):
+        return v
+    try:
+        out = json.loads(v)
+        return out if isinstance(out, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+# ==================================================================== a change from another worker (decision 23)
+CONTEXT_EDGES = {"located_at", "affects", "assigned_to"}  # links a note makes about itself: part of feeding data
+ENTRY_AUTHOR = {"notes": "member_id", "tasks": "created_by_member", "alerts": "member_id"}
+NODE_EDITS = {"title", "parent_id", "visibility", "vis_set_by", "attributes", "status", "summary", "kind"}
+
+
+def classify(tbl: str, op: str, row: dict | None, cur: dict | None,
+             author: str) -> list[tuple[str, str | None, bool, bool]]:
+    """What a row change amounts to in the matrix: (action, node, own, assigned) for each part. Columns the brain
+    works out itself (paths, roll-ups, levels) are no one's action. "refuse" marks what nobody else may write."""
+    new, old = row or {}, cur or {}
+    both = new or old
+    if tbl == "nodes":
+        if op == "D":
+            return [("delete_node", old.get("id"), False, False)] if old else []
+        if not old:
+            return [("create_node", new.get("parent_id"), False, False)]
+        out: list[tuple[str, str | None, bool, bool]] = []
+        nid = old["id"]
+        if new.get("title") != old.get("title") or new.get("kind") != old.get("kind"):
+            out.append(("rename_node", nid, False, False))
+        if new.get("parent_id") != old.get("parent_id"):
+            out += [("move_node", nid, False, False), ("move_node", new.get("parent_id"), False, False)]
+        if (new.get("visibility"), new.get("vis_set_by")) != (old.get("visibility"), old.get("vis_set_by")):
+            out.append(("set_visibility", nid, False, False))
+        if new.get("attributes") != old.get("attributes") or new.get("summary") != old.get("summary"):
+            a, b = _json(new.get("attributes")), _json(old.get("attributes"))
+            keys = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+            out.append(("progress" if keys <= PROGRESS_KEYS and new.get("summary") == old.get("summary")
+                        else "update_attributes", nid, False, False))
+        if new.get("status") != old.get("status"):
+            was, now = str(old.get("status")), str(new.get("status"))
+            lowering = STATUS_RANK.get(was, 2) >= STATUS_RANK["routine_due"] and STATUS_RANK.get(now, 2) < STATUS_RANK.get(was, 2)
+            out.append(("lower_status" if lowering else "raise_status", nid, False, False))
+        return out
+    if tbl in ENTRY_AUTHOR:
+        node = both.get("node_id")
+        own = both.get(ENTRY_AUTHOR[tbl]) == author
+        if op == "D":
+            return [("undo" if own else "delete_entry", node, own, False)]
+        if not old:
+            out = [({"notes": "append_note", "tasks": "create_task", "alerts": "create_alert"}[tbl], node, own, False)]
+            if tbl == "tasks" and new.get("assignee_member") not in (None, author):
+                out.append(("assign_task", node, own, False))
+            return out
+        changed = {k for k in set(new) | set(old) if new.get(k) != old.get(k)} - {"synced_at"}
+        if tbl == "tasks":
+            out = []
+            if changed & {"state", "done_at"}:
+                out.append(("complete_task", node, own, old.get("assignee_member") == author))
+            if changed & {"assignee_member", "due_at"}:
+                out.append(("assign_task", node, own, False))
+            if changed & {"title", "priority", "node_id"}:
+                out.append(("edit_entry", node, own, False))
+            return out
+        if tbl == "alerts":
+            return ([("resolve_alert", node, own, False)] if "resolved_at" in changed else []) + \
+                   ([("edit_entry", node, own, False)] if changed - {"resolved_at"} else [])
+        return [("edit_entry", node, own, False)] if changed else []
+    if tbl == "edges":
+        what = "append_note" if both.get("edge_type") in CONTEXT_EDGES else "link_nodes"
+        return [(what, both.get("src_id"), False, False), (what, both.get("dst_id"), False, False)]
+    if tbl in ("node_aliases", "route_corrections"):
+        return [("teach_alias", both.get("node_id"), False, False)]
+    if tbl == "captures":
+        if op == "D":
+            return [("manage_workspace", None, False, False)]
+        if not old:
+            return [("capture", None, True, False)] if new.get("member_id") == author else [("refuse", None, False, False)]
+        return [("refuse", None, False, False)] if new.get("member_id") != old.get("member_id") else []
+    if tbl == "profile_facts":
+        return [("profile_fact", None, False, False)]
+    if tbl in ("members", "member_scopes"):
+        return [("set_role", None, False, False)]
+    if tbl == "seats" or tbl == "devices" or (tbl == "invites" and old):
+        return [("manage_seats", None, False, False)]
+    if tbl == "invites":
+        return [("invite", None, False, False)]
+    if tbl == "workspaces":
+        return [("manage_workspace", None, False, False)]
+    if tbl == "inbox" and old and old.get("author_member_id") != author:
+        return [("approve", None, False, False)]
+    return []  # capture_events, action_log, notifications, an Inbox item's own author: written by the brain
+
+
+def check_change(db, ws: str | None, tbl: str, op: str, row: dict | None, cur: dict | None, author: str | None,
+                 cache: dict) -> tuple[str, str] | None:
+    """None when the author may make this change now; else (PROPOSE or REFUSE, why). The receiving worker is the
+    authority (ADR 0014, decision 23): it judges by its own, current copy of the author's role. A change with no
+    author is the brain's own (or from a worker before ADR 0014): workers are trusted, roles are what can lag."""
+    if not author or not ws:
+        return None
+    if (ws, author) not in cache:
+        p = load_principal(db, ws, author)
+        cache[(ws, author)] = (p, View(db, p, ws) if p else None)
+    p, view = cache[(ws, author)]
+    if p is None or view is None:
+        return None  # a member this worker has not heard of yet: their row is on its way
+    verdict: tuple[str, str] | None = None
+    for action, node, own, assigned in classify(tbl, op, row, cur, author):
+        if action == "refuse":
+            return REFUSE, "a capture can only be written by the member who spoke it"
+        if node and not view.all:
+            if node not in view.known:
+                view.refresh()  # a node that arrived in this batch
+            if not view.rows(node) and not (op == "D" and node not in view.known):  # (a delete of what is gone here)
+                return REFUSE, "not on their map"
+        if tbl == "nodes" and action == "set_visibility" and p.level > OWNER:
+            if (row or {}).get("visibility") == "owner" or (cur or {}).get("vis_set_by") == OWNER:
+                return REFUSE, "only an owner sets or lifts an owner-only branch"
+        out = p.decide(action, in_scope=view.in_scope(node) if node else True, own=own, assigned=assigned)
+        if out == REFUSE:
+            return REFUSE, f"a {ROLES.get(p.level, 'member')} may not {action.replace('_', ' ')}"
+        if out == PROPOSE:
+            verdict = (PROPOSE, f"{action.replace('_', ' ')} needs approval")
+    return verdict
+
+
+def rank(level: int | None) -> int:
+    """Who wins two edits made at the same time to the same row: the brain, then owner, manager, employee."""
+    return 4 if level in (None, SYSTEM) else 4 - level
+
+
+def _json(v) -> dict:
+    import json
+    if isinstance(v, dict):
+        return v
+    try:
+        out = json.loads(v) if v else {}
+        return out if isinstance(out, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def capabilities(p: Principal) -> dict[str, str]:
+    """What the apps may offer this member, inside their own branches (the brain still decides every request)."""
+    return {a: p.decide(a, in_scope=True, own=True, assigned=True) for a in MATRIX}
 
 
 # ==================================================================== the last owner

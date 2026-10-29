@@ -12,7 +12,7 @@ import numpy as np
 
 from .common import STATUS_RANK, new_id, now_iso, parse_iso, short_label, worst
 from .db import Database, loads
-from .permissions import OWNER, member_role
+from .permissions import EMPLOYEE, OWNER, VISIBILITY, member_role
 
 
 class GraphError(ValueError):
@@ -65,11 +65,13 @@ class Graph:
     def _insert_node(self, ws: str, parent_id: str | None, title: str, kind: str, *, attributes: dict | None = None,
                      created_by: str = "user", node_id: str | None = None, sort_key: str = "m") -> str:
         nid = node_id or new_id()
+        eff = EMPLOYEE
         if parent_id:
-            parent = self.db.one("select path, depth, workspace_id from nodes where id=?", (parent_id,))
+            parent = self.db.one("select path, depth, workspace_id, eff_level from nodes where id=?", (parent_id,))
             if parent is None or parent["workspace_id"] != ws:
                 raise GraphError(f"parent {parent_id} not in workspace")
             path, depth = f"{parent['path']}/{short_label(nid)}", parent["depth"] + 1
+            eff = parent["eff_level"]  # a new node is at least as restricted as where it is put (ADR 0014)
         else:
             path, depth = short_label(nid), 0
         now = now_iso()
@@ -78,7 +80,7 @@ class Graph:
                                  "attributes": attributes or {}, "status": "ok", "status_reason": None,
                                  "status_since": now, "display_status": "ok", "child_worst": "ok", "open_tasks": 0,
                                  "open_alerts": 0, "version": 1, "created_by": created_by, "created_at": now,
-                                 "updated_at": now})
+                                 "updated_at": now, "eff_level": eff})
         return nid
 
     def add_node(self, ws: str, parent_id: str, title: str, kind: str = "topic", *, aliases: list[str] | None = None,
@@ -158,21 +160,23 @@ class Graph:
         return [self._row(r) for r in self.db.query(
             "select * from nodes where workspace_id=? and depth between 1 and ? order by path", (ws, max_depth))]
 
-    def tree(self, ws: str) -> dict:
-        rows = self.nodes(ws)
+    def tree(self, ws: str, keep=None) -> dict:
+        """keep(node_id): the nodes to include (a member's view, ADR 0014); a kept node's ancestors are always kept."""
+        rows = [r for r in self.nodes(ws) if keep is None or keep(r["id"])]
         by_id = {r["id"]: {**r, "children": []} for r in rows}
         root = None
         for r in rows:
-            if r["parent_id"]:
+            if r["parent_id"] and r["parent_id"] in by_id:
                 by_id[r["parent_id"]]["children"].append(by_id[r["id"]])
-            else:
+            elif not r["parent_id"]:
                 root = by_id[r["id"]]
         return root or {}
 
     def rename(self, node_id: str, title: str) -> None:
         self.db.update("nodes", {"id": node_id}, {"title": title.strip()[:80], "updated_at": now_iso()})
 
-    def move(self, node_id: str, new_parent_id: str) -> None:
+    def move(self, node_id: str, new_parent_id: str) -> list[str]:
+        """Returns the nodes whose effective level changed with the move."""
         n, p = self.node(node_id), self.node(new_parent_id)
         if n is None or p is None or n["workspace_id"] != p["workspace_id"]:
             raise GraphError("unknown node")
@@ -187,7 +191,9 @@ class Graph:
                 self.db.update("nodes", {"id": d["id"]}, {"path": new_prefix + d["path"][len(n["path"]):],
                                                           "depth": d["depth"] + delta})
             self.db.update("nodes", {"id": node_id}, {"parent_id": new_parent_id, "updated_at": now_iso()})
+            changed = self.recompute_levels(node_id)  # under a restricted branch now, or out of one
             self.rollup([node_id] + ([old_parent] if old_parent else []))
+        return changed
 
     def delete_subtree(self, node_id: str) -> None:
         n = self.node(node_id)
@@ -201,6 +207,74 @@ class Graph:
                 self.db.execute("delete from nodes where id=?", (i,))
             if n["parent_id"]:
                 self.rollup([n["parent_id"]])
+
+    # ================================================================ visibility (ADR 0014)
+    def set_visibility(self, node_id: str, visibility: str, by_level: int) -> tuple[dict, list[str]]:
+        """all | manager | owner on one node; its subtree's effective level follows. Returns what it was, and the
+        nodes whose effective level changed."""
+        if visibility not in VISIBILITY:
+            raise GraphError(f"unknown visibility {visibility!r}")
+        n = self.node(node_id)
+        if n is None:
+            raise GraphError("unknown node")
+        if n["kind"] == "root":
+            raise GraphError("the top of the map stays visible to everyone; restrict a branch under it")
+        with self.db.tx():
+            self.db.update("nodes", {"id": node_id}, {"visibility": visibility,
+                                                      "vis_set_by": None if visibility == "all" else by_level,
+                                                      "updated_at": now_iso()})
+            changed = self.recompute_levels(node_id)
+        return {"visibility": n["visibility"], "vis_set_by": n["vis_set_by"]}, changed
+
+    def recompute_levels(self, node_id: str) -> list[str]:
+        """eff_level for a node and its subtree: the strictest of its own visibility and every ancestor's. Returns the
+        ids whose level changed (their captures are re-levelled by the caller)."""
+        n = self.db.one("select workspace_id, path, parent_id from nodes where id=?", (node_id,))
+        if n is None:
+            return []
+        top = EMPLOYEE
+        if n["parent_id"]:
+            p = self.db.one("select eff_level from nodes where id=?", (n["parent_id"],))
+            top = p["eff_level"] if p else EMPLOYEE
+        rows = self.db.query("select id, parent_id, visibility, eff_level from nodes where workspace_id=? and "
+                             "(path=? or path like ?) order by depth", (n["workspace_id"], n["path"], n["path"] + "/%"))
+        eff: dict[str, int] = {}
+        changed: list[str] = []
+        for r in rows:
+            above = top if r["id"] == node_id else eff.get(r["parent_id"], top)
+            e = min(VISIBILITY.get(r["visibility"] or "all", EMPLOYEE), above)
+            eff[r["id"]] = e
+            if e != r["eff_level"]:
+                self.db.update("nodes", {"id": r["id"]}, {"eff_level": e})
+                changed.append(r["id"])
+        return changed
+
+    def capture_level(self, capture_id: str, held_level: int | None = None) -> int | None:
+        """A capture is as restricted as the strictest node any of its events touched and its held Inbox items. One
+        that touched nothing keeps the level it was registered with (its author's: see Brain.register_capture)."""
+        r = self.db.one("select min(n.eff_level) as e from action_log a join nodes n on n.id=a.node_id "
+                        "where a.capture_id=? and a.undone_at is null", (capture_id,))
+        levels = [x for x in ((r or {}).get("e"), held_level) if x is not None]
+        if not levels:
+            return None
+        lvl = min(levels)
+        self.db.execute("update captures set eff_level=? where id=? and eff_level<>?", (lvl, capture_id, lvl))
+        return lvl
+
+    def relevel_captures(self, node_ids: list[str]) -> int:
+        """After nodes changed level: every capture that touched them takes its level again."""
+        if not node_ids:
+            return 0
+        caps: set[str] = set()
+        for i in range(0, len(node_ids), 400):
+            part = node_ids[i:i + 400]
+            caps |= {r["capture_id"] for r in self.db.query(
+                f"select distinct capture_id from action_log where capture_id is not null and node_id in "
+                f"({', '.join('?' for _ in part)})", part)}
+        for c in caps:
+            held = self.db.one("select min(approver_level) as h from inbox where capture_id=? and state='open'", (c,))
+            self.capture_level(c, (held or {}).get("h"))
+        return len(caps)
 
     # ================================================================ aliases and embeddings
     def add_alias(self, node_id: str, alias: str, weight: float = 1.0, lang: str | None = None) -> None:
