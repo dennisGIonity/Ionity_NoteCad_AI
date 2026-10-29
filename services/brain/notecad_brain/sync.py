@@ -697,7 +697,13 @@ class HttpPeer:
     def __init__(self, base_url: str, token: str | None = None, transport=None, timeout: float = 60):
         import httpx
         self.url = base_url.rstrip("/")
-        self.client = httpx.Client(base_url=self.url, timeout=timeout, transport=transport,
+        import os
+        verify: object = True
+        ca = os.environ.get("NC_BRAIN_SYNC_CA")  # a hub on the LAN: trust exactly its certificate (tls.py)
+        if ca and self.url.startswith("https"):
+            from .tls import pinned_context
+            verify = pinned_context(ca)
+        self.client = httpx.Client(base_url=self.url, timeout=timeout, transport=transport, verify=verify,  # pyright: ignore[reportArgumentType]
                                    headers={"Authorization": f"Bearer {token}"} if token else {})
         self.id: str | None = None
 

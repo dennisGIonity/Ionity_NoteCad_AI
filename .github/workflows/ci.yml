@@ -47,7 +47,7 @@ jobs:
           cache-dependency-path: services/*/pyproject.toml
       - name: Install
         run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]"
-      - name: Supabase migrations 0001-0008 on an empty database
+      - name: Supabase migrations 0001-0009 on an empty database
         # a failure goes out as an annotation, which anyone can read on the run page (step logs need a sign-in)
         run: |
           annotate() { sed 's/%/%25/g' "$2" | tail -c 1500 | awk 'BEGIN { ORS = "%0A" } { print }' \
@@ -61,8 +61,8 @@ jobs:
           create role anon; create role authenticated; create role service_role;
           create publication supabase_realtime;
           SQL
-          # every file in order, then 0007 and 0008 once more: a hub that already has them runs them again harmlessly
-          for f in supabase/migrations/*.sql supabase/migrations/0007_*.sql supabase/migrations/0008_*.sql; do
+          # every file in order, then 0007-0009 once more: a hub that already has them runs them again harmlessly
+          for f in supabase/migrations/*.sql supabase/migrations/0007_*.sql supabase/migrations/0008_*.sql supabase/migrations/0009_*.sql; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -d supabase_check -f "$f" 2> psql.txt \
               || { cat psql.txt; annotate "Supabase $(basename "$f")" psql.txt; exit 1; }
@@ -70,7 +70,7 @@ jobs:
       - name: Supabase 0005 still matches sync.py
         working-directory: services/brain
         run: python tools/gen_sync_migration.py --check
-      - name: Supabase 0007 as shipped, 0008 still matches db.py and permissions.py (generated RLS)
+      - name: Supabase 0007-0008 as shipped, 0009 still matches db.py and permissions.py (generated RLS)
         working-directory: services/brain
         run: python tools/gen_rls_migration.py --check
       - name: Brain tests, SQLite and Postgres

@@ -141,7 +141,7 @@ class People:
     # ================================================================ invites
     def invite(self, p: Principal, ws: str, *, name: str, role: str = "employee", contact: str | None = None,
                person_node_id: str | None = None, scope_node_ids: list[str] | None = None,
-               hours: int = INVITE_HOURS, base_urls: list[str] | None = None) -> dict:
+               hours: int = INVITE_HOURS, base_urls: list[str] | None = None, pin: str | None = None) -> dict:
         """An invite with a one-time code (returned here, once) for a seat that is free now."""
         if role not in ("manager", "employee"):
             raise GraphError("invite a manager or an employee")
@@ -170,7 +170,9 @@ class People:
                            "person_node_id": person_node_id, "scope_node_ids": scope},
                "expires_at": now_iso((datetime.now(timezone.utc) + timedelta(hours=hours)).timestamp())}
         self.db.insert("invites", row)
-        links = [f"notecad://join?{urlencode({'u': u, 'c': code, 'w': ws})}" for u in (base_urls or [])]
+        extra = {"f": pin} if pin else {}  # the TLS certificate the phone pins (https links only)
+        links = [f"notecad://join?{urlencode({'u': u, 'c': code, 'w': ws, **(extra if u.startswith('https') else {})})}"
+                 for u in (base_urls or [])]
         return {"invite": self._public_invite(row), "code": code, "links": links}
 
     @staticmethod

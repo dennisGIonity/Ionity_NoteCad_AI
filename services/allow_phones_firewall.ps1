@@ -2,13 +2,14 @@
 # Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 #
-# Lets phones on the farm network reach the NoteCad brain (:8788) and the Edge AI Node (:8789).
+# Lets phones on the farm network reach the NoteCad brain (HTTPS :9788) and the Edge AI Node (HTTPS :9789).
+# Plain HTTP (:8788, :8789) stays on this PC only; an older rule for those ports is removed here.
 # Inbound TCP only, Private network profile only, and only from the local subnet.
 # Run it once yourself, as Administrator (it asks for elevation if needed):
 #   powershell -ExecutionPolicy Bypass -File services\allow_phones_firewall.ps1
 #   ... -Check      show the rules and the network profile, change nothing
 #   ... -Remove     delete the NoteCad rules again
-param([int[]]$Ports = @(8788, 8789), [switch]$Check, [switch]$Remove)
+param([int[]]$Ports = @(9788, 9789), [switch]$Check, [switch]$Remove)
 
 $group = "Ionity NoteCad"
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -48,7 +49,7 @@ Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Remove-NetFire
 if ($Remove) { Write-Host "  NoteCad firewall rules removed." -ForegroundColor Yellow; Show-State; return }
 
 foreach ($p in $Ports) {
-  $name = if ($p -eq 8788) { "NoteCad brain $p" } elseif ($p -eq 8789) { "NoteCad edge node $p" } else { "NoteCad $p" }
+  $name = if ($p -eq 9788) { "NoteCad brain $p" } elseif ($p -eq 9789) { "NoteCad edge node $p" } else { "NoteCad $p" }
   try {
     # the firewall refuses '|' in a description
     New-NetFirewallRule -DisplayName $name -Group $group -Direction Inbound -Action Allow -Protocol TCP `

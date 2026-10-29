@@ -4,7 +4,8 @@
 # Starts a brain API (SQLite in data\<Name>). Routers: Claude if a key is set, then the local Gemma in Ollama, then
 # rules. Needs Ollama running (tools\start_local.ps1 in the companion starts it).
 #   powershell -ExecutionPolicy Bypass -File tools\start_brain.ps1                 desktop brain on 127.0.0.1:8788
-#   ... -Lan                                                                        also reachable by phones on the LAN
+#   ... -Lan                                                                        and HTTPS on :9788 for phones on the LAN
+#                                                       (Port + 1000; its own certificate in data\<Name>\tls, pinned by the phones)
 #   ... -Name edge-node -Port 8789 -HubOnly                                         an Edge AI Node (sync hub) on :8789
 #   ... -SyncTarget http://127.0.0.1:8789                                           sync this brain with that node
 #   ... -Stop  [-Port 8789]                                                         stop the brain on that port
@@ -29,7 +30,7 @@ $vault = "E:\.claude\_vault\notecad.env"
 # the venv python.exe is a launcher with a child process, so stop by command line (and port), not by pid
 function Stop-Brain {
   Get-CimInstance Win32_Process -Filter "name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*notecad_brain.api*' -and $_.CommandLine -like "*--port $Port*" } |
+    Where-Object { $_.CommandLine -match 'notecad_brain\.(api|serve)' -and $_.CommandLine -like "*--port $Port*" } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 Stop-Brain
@@ -66,8 +67,11 @@ $env:NC_BRAIN_COMPANION_URL  = "http://127.0.0.1:8787"
 foreach ($k in $secrets.Keys) { Set-Item "env:$k" $secrets[$k] }
 
 # per-instance settings win over the vault (the edge node must not sync with itself)
-$bind = if ($Lan) { "0.0.0.0" } else { "127.0.0.1" }
-$env:NC_BRAIN_BIND = $bind
+# plain HTTP stays on this PC; -Lan adds HTTPS on Port + 1000 (serve.py sets NC_BRAIN_BIND, _TLS_PORT, _TLS_CERT)
+$env:NC_BRAIN_BIND = "127.0.0.1"
+foreach ($k in "NC_BRAIN_TLS_PORT", "NC_BRAIN_TLS_CERT") { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
+$serveArgs = @("-m", "notecad_brain.serve", "--port", "$Port")
+if ($Lan) { $serveArgs += "--lan" }
 $env:NC_BRAIN_WORKER_ID = if ($WorkerId) { $WorkerId } elseif ($Name -eq "brain") { "desktop-$($env:COMPUTERNAME.ToLower())" } else { $Name }
 if ($SyncTarget) { $env:NC_BRAIN_SYNC_TARGET = $SyncTarget }
 elseif ($Name -ne "brain") { Remove-Item env:NC_BRAIN_SYNC_TARGET -ErrorAction SilentlyContinue }
@@ -83,7 +87,7 @@ if ($HubOnly) {
 $py = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
 $p = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory (Join-Path $PSScriptRoot "..") `
   -RedirectStandardOutput "$logs\api.out.log" -RedirectStandardError "$logs\api.err.log" `
-  -ArgumentList @("-m", "uvicorn", "notecad_brain.api:app", "--host", $bind, "--port", "$Port")
+  -ArgumentList $serveArgs
 $p.Id | Set-Content $pidFile
 $t = Get-Date
 while (-not $NoWait -and ((Get-Date) - $t).TotalSeconds -lt 60) {
@@ -94,7 +98,7 @@ while (-not $NoWait -and ((Get-Date) - $t).TotalSeconds -lt 60) {
 }
 Write-Host "brain '$Name' on http://127.0.0.1:$Port  (worker $($env:NC_BRAIN_WORKER_ID); docs at /docs)"
 if ($Lan) {
-  Write-Host "listening on the LAN. If phones cannot connect, allow the port once in an elevated PowerShell:"
-  Write-Host "  New-NetFirewallRule -DisplayName 'NoteCad brain $Port' -Direction Inbound -Protocol TCP -LocalPort $Port -Profile Private -Action Allow"
+  Write-Host "HTTPS for phones on https://<this PC>:$($Port + 1000) (log: $logs\api.log). If phones cannot connect, once as admin:"
+  Write-Host "  powershell -ExecutionPolicy Bypass -File services\allow_phones_firewall.ps1"
 }
 if ($env:NC_BRAIN_SYNC_TARGET) { Write-Host "syncing with $($env:NC_BRAIN_SYNC_TARGET -replace '://[^@/]*@', '://***@')" }

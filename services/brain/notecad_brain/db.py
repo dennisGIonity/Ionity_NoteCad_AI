@@ -185,6 +185,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "create index if not exists devices_ws on devices(workspace_id, member_id)",
         "create index if not exists seats_member on seats(assigned_member_id)",
     ]),
+    # POPIA review (docs/compliance): how long each workspace keeps recordings, transcripts and its activity log
+    # (retention.py), the owner's privacy notice details, and when each member read the notice
+    (9, "retention periods and the privacy notice", [
+        "alter table workspaces add column if not exists retention text",
+        "alter table workspaces add column if not exists privacy text",
+        "alter table members add column if not exists privacy_ack_at text",
+    ]),
 ]
 
 _ADD_COLUMN = re.compile(r"alter table (\w+) add column if not exists (\w+) (.+)", re.S)

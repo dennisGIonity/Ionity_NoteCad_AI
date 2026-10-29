@@ -1238,7 +1238,9 @@ class Brain:
         return out
 
     def delete_workspace(self, ws: str) -> dict:
-        """Remove a workspace and everything in it, its recorded audio included. Not reversible: archive first."""
+        """Remove a workspace and everything in it, its recorded audio included. Not reversible: archive first.
+        The sync journal keeps no copy of it afterwards: only the deletes (tombstones, no data) stay, so that every
+        other worker deletes it too (POPIA review, fix 2)."""
         if self.graph.workspace(ws) is None:
             raise KeyError(ws)
         counts: dict[str, int] = {}
@@ -1258,6 +1260,14 @@ class Brain:
             counts["nodes"] = len(nodes)
             counts["members"] = self.db.execute("delete from members where workspace_id=?", (ws,))
             self.db.execute("delete from workspaces where id=?", (ws,))
+            node_ids = [n["id"] for n in nodes]
+            for i in range(0, len(node_ids), 500):
+                part = node_ids[i:i + 500]
+                self.db.execute(f"delete from sync_conflicts where node_id in ({', '.join('?' for _ in part)})", part)
+            self.db.execute("delete from view_changes where ws=?", (ws,))
+            self.db.execute("delete from sync_rejects where change like ?", (f'%"{ws}"%',))
+            counts["journal"] = self.db.execute("delete from sync_changes where ws=? and op<>'D'", (ws,))
+            self.db.execute("update sync_changes set row=null where ws=? and op='D' and row is not null", (ws,))
         audio = Path(self.settings.audio_dir) / ws
         if audio.is_dir():
             import shutil

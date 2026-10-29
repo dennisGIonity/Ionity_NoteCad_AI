@@ -123,6 +123,11 @@ class AskIn(BaseModel):
     context_node_id: str | None = Field(default=None, max_length=64)
 
 
+class PrivacyIn(BaseModel):
+    contact: str | None = Field(default=None, max_length=200)
+    retention: dict | None = None  # {"audio_days": 90, "transcript_days": 365, "log_days": 365}; null keeps
+
+
 class SeatsIn(BaseModel):
     role: str = Field(pattern="^(manager|employee)$")
     count: int = Field(default=1, ge=1, le=100)
@@ -154,6 +159,35 @@ class TaskPatch(BaseModel):
     due_at: str | None = None
 
 
+class Tickets:
+    """Short-lived stand-ins for a token in a GET URL: nck_<expiry>.<credential hash>.<HMAC>. The key lives in this
+    process only, so a restart ends every ticket (the apps ask again when the stream closes)."""
+    TTL = 600
+    PREFIX = "nck_"
+
+    def __init__(self) -> None:
+        import secrets
+        self._key = secrets.token_bytes(32)
+
+    def _sig(self, body: str) -> str:
+        return hmac.new(self._key, body.encode(), hashlib.sha256).hexdigest()[:32]
+
+    def issue(self, cred_hash: str, is_device: bool, now: float | None = None) -> str:
+        body = f"{int((now or time.time()) + self.TTL)}.{'d' if is_device else 's'}{cred_hash}"
+        return f"{self.PREFIX}{body}.{self._sig(body)}"
+
+    def check(self, ticket: str, now: float | None = None) -> tuple[str, bool] | None:
+        if not ticket.startswith(self.PREFIX):
+            return None
+        body, _, sig = ticket[len(self.PREFIX):].rpartition(".")
+        exp, _, cred = body.partition(".")
+        if not (exp.isdigit() and len(cred) == 65 and hmac.compare_digest(sig, self._sig(body))):
+            return None
+        if int(exp) < (now or time.time()):
+            return None
+        return cred[1:], cred[0] == "d"
+
+
 def create_app(brain: Brain | None = None, settings: Settings | None = None) -> FastAPI:
     settings = settings or (brain.settings if brain else Settings())
     brain = brain or Brain(settings)
@@ -166,11 +200,16 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
             def loop():
                 next_decay = 0.0
+                next_purge = time.monotonic() + 60  # retention (POPIA): a minute after start, then every 6 hours
                 while not stop.is_set():
                     try:
                         if time.monotonic() >= next_decay:  # info rings and done marks fade without anyone asking
                             next_decay = time.monotonic() + 600
                             brain.decay_all()
+                        if time.monotonic() >= next_purge:
+                            next_purge = time.monotonic() + 6 * 3600
+                            from . import retention
+                            retention.purge_all(brain)
                         if brain.run_jobs() == 0:
                             stop.wait(0.5)
                     except Exception:
@@ -234,27 +273,38 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     joins: dict[str, list[float]] = {}  # client address -> recent join attempts (at most 10 a minute)
     REVOKED = {"code": "revoked", "wipe": True, "detail": "this device was removed from the business: its copy is wiped"}
 
-    def bearer(request: Request) -> str | None:
+    tickets = Tickets()
+
+    def credential(request: Request) -> tuple[str, bool] | None:
+        """(SHA-256 of the token, is it a device token) from the Bearer header, or on a GET where no header can be set
+        (EventSource, <audio src>) from ?ticket= (POST /v1/tickets: short-lived, so a token never sits in a URL or a
+        log). ?token= is still read on a GET for one release, for apps from before tickets (POPIA review, fix 3)."""
         hdr = request.headers.get("authorization") or ""
-        if hdr.startswith("Bearer "):
-            return hdr[7:].strip()
-        if request.method in ("GET", "HEAD"):  # only where a header cannot be set: EventSource, <audio src>
-            return request.query_params.get("token")
-        return None
+        tok = hdr[7:].strip() if hdr.startswith("Bearer ") else None
+        if tok is None and request.method in ("GET", "HEAD"):
+            t = request.query_params.get("ticket")
+            if t:
+                got = tickets.check(t)
+                if got is None:
+                    raise HTTPException(401, "ticket expired: ask for a new one")
+                return got
+            tok = request.query_params.get("token")
+        return (hashlib.sha256(tok.encode()).hexdigest(), tok.startswith(DEVICE)) if tok else None
 
     def token_ok(request: Request) -> bool:
         """The shared token (NC_BRAIN_API_TOKEN): other brains, and phones paired before seats."""
         if not settings.api_token:
             return False
-        tok = bearer(request)
-        return tok is not None and hmac.compare_digest(tok.encode(), settings.api_token.encode())
+        c = credential(request)
+        return c is not None and not c[1] and hmac.compare_digest(
+            c[0], hashlib.sha256(settings.api_token.encode()).hexdigest())
 
     def device_of(request: Request) -> dict | None:
         """A device token: its device row, or 410 with the order to wipe when the device or its member was revoked."""
-        tok = bearer(request)
-        if not tok or not tok.startswith(DEVICE):
+        c = credential(request)
+        if c is None or not c[1]:
             return None
-        d = brain.db.one("select * from devices where token_hash=?", (hashlib.sha256(tok.encode()).hexdigest(),))
+        d = brain.db.one("select * from devices where token_hash=?", (c[0],))
         if d is None:
             raise HTTPException(401, "missing or wrong token")
         m = brain.db.one("select status from members where id=?", (d["member_id"],))
@@ -270,8 +320,8 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
     def check_auth(request: Request) -> None:
         """This PC is trusted (the desktop app needs no token); phones and other workers on the LAN send the token
-        as a Bearer header, or ?token= on a GET where a header cannot be set (EventSource). Plain HTTP: LAN or VPN
-        only. A web page open on this PC is not trusted: a change sent from a browser origin that is not one of
+        as a Bearer header, or a short-lived ?ticket= on a GET where a header cannot be set (EventSource). On the LAN
+        the brain speaks TLS (serve.py, -Lan). A web page open on this PC is not trusted: a change sent from a browser origin that is not one of
         NoteCad's own needs the token (a multipart POST needs no CORS preflight, so CORS alone does not stop it).
         ADR 0014: a device token is looked at first and names the member everything is done as."""
         d = device_of(request)
@@ -404,6 +454,15 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
             rows = [{**w, "nodes": len(v.rows_ids | v.stub_ids) if not v.all else w["nodes"]}
                     for w in rows if w["id"] == d["workspace_id"]]
         return rows
+
+    @r.post("/v1/tickets", dependencies=A)
+    def ticket(request: Request):
+        """A ticket for the URLs that cannot carry a header (live events, recordings): it stands for the caller's own
+        credential for 10 minutes and is no use for anything else. This PC without a token needs none."""
+        c = credential(request)
+        if c is None:
+            return {"ticket": None, "expires_in": None}
+        return {"ticket": tickets.issue(*c), "expires_in": Tickets.TTL}
 
     @r.get("/v1/workspaces/{ws}/me", dependencies=A)
     def me(ws: str, request: Request):
@@ -863,23 +922,20 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
     # ---------------------------------------------------------------- people: seats, invites, joining, devices
     def lan_urls(port: int) -> list[str]:
-        import socket
-        ips: list[str] = []
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("192.0.2.1", 9))  # picks the LAN interface; sends nothing
-            ips.append(s.getsockname()[0])
-            s.close()
-        except OSError:
-            pass
-        try:
-            for *_, addr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-                ip = str(addr[0])
-                if ip not in ips and not ip.startswith("127."):
-                    ips.append(ip)
-        except OSError:
-            pass
-        return [f"http://{ip}:{port}" for ip in ips]
+        """This PC's LAN addresses: HTTPS on the TLS port when serve.py --lan runs (POPIA review, fix 4)."""
+        from .tls import local_ips
+        if settings.tls_port:
+            return [f"https://{ip}:{settings.tls_port}" for ip in local_ips()]
+        return [f"http://{ip}:{port}" for ip in local_ips()]
+
+    _fp: list[str | None] = []
+
+    def tls_pin() -> str | None:
+        """The certificate's SHA-256 that phones pin; carried as f= in pairing and join links."""
+        if not _fp:
+            from .tls import fingerprint
+            _fp.append(fingerprint(settings.tls_cert) if settings.tls_cert else None)
+        return _fp[0]
 
     def brain_urls(request: Request) -> list[str]:
         """Where a phone reaches this brain: this PC's LAN addresses when asked here, else the address that was used."""
@@ -895,6 +951,36 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         if len(recent) >= 10:
             raise HTTPException(429, "too many tries: wait a minute")
         joins[ip] = recent + [now]
+
+    # ---------------------------------------------------------------- privacy notice and retention (POPIA)
+    @r.get("/v1/workspaces/{ws}/privacy", dependencies=A)
+    def privacy_notice(ws: str, request: Request):
+        """What the privacy notice says for this business, and whether the caller has read it."""
+        from . import privacy
+        return guard(privacy.notice, brain, who(request, ws_ok(ws)), ws)
+
+    @r.put("/v1/workspaces/{ws}/privacy", dependencies=A)
+    def privacy_accept(ws: str, body: PrivacyIn, request: Request):
+        """An owner: the contact for questions, how long things are kept, and accepting the notice."""
+        from . import privacy
+        try:
+            return guard(privacy.accept, brain, who(request, ws_ok(ws)), ws, body.contact, body.retention)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @r.post("/v1/workspaces/{ws}/privacy/ack", dependencies=A)
+    def privacy_ack(ws: str, request: Request):
+        from . import privacy
+        return guard(privacy.acknowledge, brain, who(request, ws_ok(ws)), ws)
+
+    @r.post("/v1/workspaces/{ws}/retention/run", dependencies=A)
+    def retention_run(ws: str, request: Request):
+        """An owner applies the periods now instead of at the next run (every 6 hours)."""
+        from . import retention
+        p = who(request, ws_ok(ws))
+        if p.level > OWNER or not p.active:
+            raise HTTPException(403, "only an owner")
+        return retention.purge(brain, ws)
 
     @r.get("/v1/workspaces/{ws}/seats", dependencies=A)
     def seats(ws: str, request: Request):
@@ -920,7 +1006,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         p = who(request, ws_ok(ws))
         return guard(brain.people.invite, p, ws, name=body.name, role=body.role, contact=body.contact,
                      person_node_id=body.person_node_id, scope_node_ids=body.scope_node_ids, hours=body.hours,
-                     base_urls=brain_urls(request))
+                     base_urls=brain_urls(request), pin=tls_pin())
 
     @r.post("/v1/invites/{invite_id}/revoke", dependencies=A)
     def revoke_invite(invite_id: str, request: Request):
@@ -1004,8 +1090,10 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         urls = lan_urls(request.url.port or 8788)  # also the addresses an invite's join link carries (ADR 0014)
         wss = brain.db.query("select id, name from workspaces order by created_at desc")
         target = ws or (wss[0]["id"] if wss else None)
-        links = [f"notecad://pair?{urlencode({'u': u, 't': settings.api_token or '', 'w': target or ''})}" for u in urls]
-        return {"lan": lan, "token_set": bool(settings.api_token), "urls": urls, "workspace": target,
+        pin = {"f": tls_pin()} if tls_pin() else {}  # the certificate the phone pins (POPIA review, fix 4)
+        links = [f"notecad://pair?{urlencode({'u': u, 't': settings.api_token or '', 'w': target or '', **pin})}"
+                 for u in urls]
+        return {"lan": lan, "token_set": bool(settings.api_token), "urls": urls, "workspace": target, "tls_pin": tls_pin(),
                 "workspaces": wss, "links": links,
                 "ready": lan and bool(settings.api_token) and bool(urls),
                 "hint": None if lan and settings.api_token else

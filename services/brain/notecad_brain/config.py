@@ -18,6 +18,11 @@ def _env(name: str, default: str | None = None) -> str | None:
     return os.environ.get(f"NC_BRAIN_{name}", default)
 
 
+def _int_env(name: str) -> int | None:
+    v = _env(name)
+    return int(v) if v else None
+
+
 @dataclass
 class Settings:
     db_url: str = field(default_factory=lambda: _env("DB_URL", "sqlite:///./data/brain.db"))
@@ -62,6 +67,12 @@ class Settings:
     sync_workspaces: str | None = field(default_factory=lambda: _env("SYNC_WORKSPACES"))  # comma list; empty = all
     upload_dir: str | None = field(default_factory=lambda: _env("UPLOAD_DIR"))  # tus parts; default next to audio
     bind_host: str = field(default_factory=lambda: _env("BIND", "127.0.0.1"))  # 0.0.0.0 when phones on the LAN connect
+    # POPIA (retention.py): how long data/archive keeps removed workspaces and backups; unset keeps them
+    archive_days: int | None = field(default_factory=lambda: _int_env("ARCHIVE_DAYS"))
+    archive_dir: str | None = field(default_factory=lambda: _env("ARCHIVE_DIR"))  # default: <data>/archive
+    # HTTPS on the LAN (serve.py --lan sets both): the port phones use and the certificate they pin
+    tls_port: int | None = field(default_factory=lambda: _int_env("TLS_PORT"))
+    tls_cert: str | None = field(default_factory=lambda: _env("TLS_CERT"))
     trust_loopback: bool = field(default_factory=lambda: _env("TRUST_LOOPBACK", "1") == "1")  # this PC needs no token
     # ADR 0014: the member this PC's own app acts as (default: the workspace's first owner)
     local_member: str | None = field(default_factory=lambda: _env("LOCAL_MEMBER"))
