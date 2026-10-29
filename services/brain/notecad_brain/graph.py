@@ -12,6 +12,7 @@ import numpy as np
 
 from .common import STATUS_RANK, new_id, now_iso, parse_iso, short_label, worst
 from .db import Database, loads
+from .permissions import OWNER, member_role
 
 
 class GraphError(ValueError):
@@ -32,7 +33,7 @@ class Graph:
                                           "owner_user": owner_user, "created_at": now})
             root = self._insert_node(ws, None, name, "root", created_by="user")
             self.db.insert("members", {"id": new_id(), "workspace_id": ws, "user_id": owner_user,
-                                       "display_name": owner_name, "role": "owner", "contact": None,
+                                       "display_name": owner_name, "role": "owner", "level": OWNER, "contact": None,
                                        "person_node_id": None, "created_at": now})
         return {"id": ws, "root_id": root}
 
@@ -45,12 +46,16 @@ class Graph:
             raise GraphError("workspace has no root")
         return self._row(dict(r))
 
-    def add_member(self, ws: str, display_name: str, *, role: str = "editor", contact: str | None = None,
+    def add_member(self, ws: str, display_name: str, *, role: str = "employee", contact: str | None = None,
                    user_id: str | None = None, person_node_id: str | None = None) -> str:
         mid = new_id()
+        try:
+            role, level, read_only = member_role(role, user_id)
+        except ValueError as e:
+            raise GraphError(str(e)) from None
         self.db.insert("members", {"id": mid, "workspace_id": ws, "user_id": user_id, "display_name": display_name,
-                                   "role": role, "contact": contact, "person_node_id": person_node_id,
-                                   "created_at": now_iso()})
+                                   "role": role, "level": level, "read_only": read_only, "contact": contact,
+                                   "person_node_id": person_node_id, "created_at": now_iso()})
         return mid
 
     def members(self, ws: str) -> list[dict]:

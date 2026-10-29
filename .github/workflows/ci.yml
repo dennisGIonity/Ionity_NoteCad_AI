@@ -47,8 +47,11 @@ jobs:
           cache-dependency-path: services/*/pyproject.toml
       - name: Install
         run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]"
-      - name: Supabase migrations 0001-0006 on an empty database
+      - name: Supabase migrations 0001-0007 on an empty database
+        # a failure goes out as an annotation, which anyone can read on the run page (step logs need a sign-in)
         run: |
+          annotate() { sed 's/%/%25/g' "$2" | tail -c 1500 | awk 'BEGIN { ORS = "%0A" } { print }' \
+                       | sed "s/^/::error title=$1::/"; echo; }
           createdb supabase_check
           # what a Supabase project provides and the migrations use: auth.uid(), the API roles
           psql -v ON_ERROR_STOP=1 -d supabase_check <<'SQL'
@@ -58,27 +61,40 @@ jobs:
           create role anon; create role authenticated; create role service_role;
           create publication supabase_realtime;
           SQL
-          for f in supabase/migrations/*.sql; do
+          # every file in order, then 0007 once more: a hub that already has it runs it again harmlessly
+          for f in supabase/migrations/*.sql supabase/migrations/0007_*.sql; do
             echo "== $f"
-            psql -v ON_ERROR_STOP=1 -q -d supabase_check -f "$f"
+            psql -v ON_ERROR_STOP=1 -q -d supabase_check -f "$f" 2> psql.txt \
+              || { cat psql.txt; annotate "Supabase $(basename "$f")" psql.txt; exit 1; }
           done
       - name: Supabase 0005 still matches sync.py
         working-directory: services/brain
         run: python tools/gen_sync_migration.py --check
+      - name: Supabase 0007 still matches db.py, sync.py and permissions.py (generated RLS)
+        working-directory: services/brain
+        run: python tools/gen_rls_migration.py --check
       - name: Brain tests, SQLite and Postgres
         working-directory: services/brain
         env:
           NC_BRAIN_TEST_PG_URL: postgresql://postgres:notecad@localhost:5432/notecad_test
-        # step logs need a GitHub sign-in; the counts go out as notices, which anyone can read on the run page
+        # step logs need a GitHub sign-in; the counts and failing tests go out as annotations, which anyone can read
         run: |
           createdb notecad_test
-          python -m pytest -q -rs > pytest.txt 2>&1 || { cat pytest.txt; exit 1; }
+          python -m pytest -q -rfEs > pytest.txt 2>&1 || {
+            cat pytest.txt
+            grep -E '^(FAILED|ERROR) ' pytest.txt | head -20 | sed 's/%/%25/g' | awk 'BEGIN { ORS = "%0A" } { print }' \
+              | sed 's/^/::error title=Brain tests failed::/'; echo
+            exit 1; }
           cat pytest.txt
           echo "::notice title=Brain (SQLite + Postgres 17)::$(tail -1 pytest.txt)"
       - name: Companion tests
         working-directory: services/companion
         run: |
-          python -m pytest -q > pytest.txt 2>&1 || { cat pytest.txt; exit 1; }
+          python -m pytest -q -rfE > pytest.txt 2>&1 || {
+            cat pytest.txt
+            grep -E '^(FAILED|ERROR) ' pytest.txt | head -20 | sed 's/%/%25/g' | awk 'BEGIN { ORS = "%0A" } { print }' \
+              | sed 's/^/::error title=Companion tests failed::/'; echo
+            exit 1; }
           cat pytest.txt
           echo "::notice title=Companion::$(tail -1 pytest.txt)"
 

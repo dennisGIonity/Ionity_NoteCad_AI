@@ -46,7 +46,7 @@ class OnboardIn(BaseModel):
 
 class MemberIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
-    role: str = Field(default="editor", pattern="^(owner|editor|viewer)$")
+    role: str = Field(default="employee", pattern="^(owner|manager|employee|editor|viewer)$")  # editor, viewer: Phase 1 names
     contact: str | None = None
     person_node_id: str | None = None
 

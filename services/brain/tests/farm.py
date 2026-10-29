@@ -50,6 +50,6 @@ def seed_farm(brain: Brain) -> dict:
     ids["north_fence"] = g.add_node(w, infra, "Fencing", "group", aliases=["fence", "north fence", "draad"])
     staff = g.add_node(w, admin, "Staff", "group")
     ids["sipho_node"] = g.add_node(w, staff, "Sipho", "person", aliases=["sipho dlamini"])
-    ids["sipho"] = g.add_member(w, "Sipho Dlamini", role="editor", person_node_id=ids["sipho_node"])
+    ids["sipho"] = g.add_member(w, "Sipho Dlamini", role="manager", person_node_id=ids["sipho_node"])
     ids["livestock"], ids["ops"], ids["infra"] = livestock, ops, infra
     return ids

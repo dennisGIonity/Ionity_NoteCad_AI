@@ -117,7 +117,69 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "create index if not exists inbox_capture on inbox(capture_id)",             # undo, resolve
         "create index if not exists action_log_unsynced on action_log(workspace_id, synced_at)",  # sync status
     ]),
+    # ADR 0014. Written so that it can run twice (a Supabase hub that already has 0007): "add column if not exists"
+    # is native on Postgres and checked by migrate() on SQLite; the updates only match rows not yet mapped.
+    (7, "roles, seats and permission-aware sync", [
+        # members: a numeric level (1 owner, 2 manager, 3 employee; 0 is the brain itself), read-only, status, seat
+        "alter table members add column if not exists level integer not null default 3",
+        "alter table members add column if not exists read_only integer not null default 0",
+        "alter table members add column if not exists status text not null default 'active'",
+        "alter table members add column if not exists seat_id text",
+        "update members set level=1 where role='owner'",
+        # an editor with a login becomes a manager; people added only for delegation become employees (ADR 0014, q1)
+        "update members set role='manager', level=2 where role='editor' and coalesce(user_id, '')<>''",
+        "update members set role='employee', level=3 where role='editor'",
+        "update members set role='employee', level=3, read_only=1 where role='viewer'",
+        # restricted branches: what was set on the node, by which level, and its effect after the ancestors
+        "alter table nodes add column if not exists visibility text not null default 'all'",
+        "alter table nodes add column if not exists vis_set_by integer",
+        "alter table nodes add column if not exists eff_level integer not null default 3",
+        "alter table nodes add column if not exists rollup_tiers text",  # roll-ups as levels 2 and 3 see them
+        "create index if not exists nodes_ws_eff on nodes(workspace_id, eff_level)",
+        # who wrote what; a capture is as restricted as the strictest node it touched
+        "alter table captures add column if not exists member_id text",
+        "alter table captures add column if not exists eff_level integer not null default 3",
+        "alter table notes add column if not exists member_id text",
+        "alter table tasks add column if not exists created_by_member text",
+        "alter table alerts add column if not exists member_id text",
+        "alter table profile_facts add column if not exists visibility text not null default 'all'",
+        # proposals wait in the Inbox for a manager or an owner
+        "alter table inbox add column if not exists kind text not null default 'place'",
+        "alter table inbox add column if not exists author_member_id text",
+        "alter table inbox add column if not exists approver_level integer",
+        "alter table inbox add column if not exists route_member_ids text",
+        "alter table inbox add column if not exists decided_by text",
+        # the audit: who, at which level, approved by whom, on which node
+        "alter table action_log add column if not exists member_id text",
+        "alter table action_log add column if not exists member_level integer",
+        "alter table action_log add column if not exists approved_by text",
+        "alter table action_log add column if not exists node_id text",
+        "create index if not exists action_log_member on action_log(workspace_id, member_id)",
+        # subtree roots a member is bound to, seats, one-time invites and per-device tokens (stored as hashes)
+        "create table if not exists member_scopes (\n"
+        "  workspace_id text not null references workspaces(id) on delete cascade, member_id text not null,\n"
+        "  node_id text not null, created_at text not null, primary key (member_id, node_id))",
+        "create index if not exists member_scopes_ws on member_scopes(workspace_id, member_id)",
+        "create table if not exists seats (\n"
+        "  id text primary key, workspace_id text not null references workspaces(id) on delete cascade,\n"
+        "  role_level integer not null, status text not null default 'available', assigned_member_id text,\n"
+        "  purchased_at text not null, expires_at text, external_ref text, ledger text not null default 'local')",
+        "create index if not exists seats_ws on seats(workspace_id, status)",
+        "create table if not exists invites (\n"
+        "  id text primary key, workspace_id text not null references workspaces(id) on delete cascade,\n"
+        "  seat_id text not null, code_hash text not null, created_by text, profile text not null default '{}',\n"
+        "  created_at text not null, expires_at text not null, used_at text, used_by_device text, revoked_at text)",
+        "create unique index if not exists invites_code on invites(code_hash)",
+        "create table if not exists devices (\n"
+        "  id text primary key, workspace_id text not null references workspaces(id) on delete cascade,\n"
+        "  member_id text not null, name text not null, platform text, token_hash text not null,\n"
+        "  created_at text not null, last_seen_at text, revoked_at text, wipe_acked_at text)",
+        "create unique index if not exists devices_token on devices(token_hash)",
+        "create index if not exists devices_member on devices(member_id)",
+    ]),
 ]
+
+_ADD_COLUMN = re.compile(r"alter table (\w+) add column if not exists (\w+) (.+)", re.S)
 
 
 class Database:
@@ -170,9 +232,20 @@ class Database:
                 continue
             with self.tx():
                 for stmt in statements:
-                    self.execute(stmt)
+                    self.run_migration_statement(stmt)
                 self.execute("insert into schema_migrations(version, name, applied_at) values (?, ?, ?)",
                              (version, name, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+        from .permissions import install_guards
+        install_guards(self)
+
+    def run_migration_statement(self, stmt: str) -> None:
+        """One statement of MIGRATIONS, written for Postgres. SQLite has no "add column if not exists": checked here."""
+        m = _ADD_COLUMN.fullmatch(stmt) if self.kind == "sqlite" else None
+        if m:
+            if m[2] in {r["name"] for r in self.query(f"pragma table_info({m[1]})")}:
+                return
+            stmt = f"alter table {m[1]} add column {m[2]} {m[3]}"
+        self.execute(stmt)
 
     @contextmanager
     def tx(self) -> Iterator["Database"]:

@@ -6,7 +6,7 @@
 A task's assignee_hint ("Sipho") is matched against workspace members and person nodes. A match assigns the
 task, links the node to the person (assigned_to) and queues a notification for that member. No match: the task
 stays with the owner and keeps the hint, so the owner sees "for Sipho?" and can assign it in one tap.
-Critical alerts notify every owner and editor.
+Critical alerts notify every owner and manager (ADR 0014: and only those who can see the node, once that filter is in).
 """
 from __future__ import annotations
 
@@ -49,9 +49,10 @@ def notify(db: Database, ws: str, member_id: str | None, kind: str, payload: dic
 
 
 def alert_audience(db: Database, ws: str) -> list[str]:
-    return [m["id"] for m in db.query("select id from members where workspace_id=? and role in ('owner','editor')", (ws,))]
+    return [m["id"] for m in db.query("select id from members where workspace_id=? and level<=2 and status='active' "
+                                      "order by level, created_at", (ws,))]
 
 
 def owner_member(db: Database, ws: str) -> str | None:
-    r = db.one("select id from members where workspace_id=? and role='owner' order by created_at", (ws,))
+    r = db.one("select id from members where workspace_id=? and level=1 and status='active' order by created_at", (ws,))
     return r["id"] if r else None

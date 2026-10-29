@@ -270,14 +270,16 @@ def test_two_workers_linking_the_same_pair_keep_one_edge():
 
 
 def test_supabase_migration_matches_the_brain():
-    """0004 was a hand copy of sync.py; 0005 is generated, and a table added to sync.TABLES must reach it."""
+    """0004 was a hand copy of sync.py; 0005 is generated, and the Phase 6 tables reach it (later tables reach the
+    migration that adds them: tests/test_roles.py checks 0007)."""
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
     import gen_sync_migration as g
-    from notecad_brain.sync import TABLES
+    from notecad_brain.sync import PHASE6_TABLES, TABLES
     assert g.OUT.read_text(encoding="utf-8") == g.render(), "run tools/gen_sync_migration.py"
-    for t in TABLES:
+    assert set(PHASE6_TABLES) <= set(TABLES)
+    for t in PHASE6_TABLES:
         assert f"create trigger nc_sync_{t} " in g.render()
     assert "security definer" in g.render()
 

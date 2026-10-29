@@ -41,6 +41,10 @@ SEP = "\x1f"  # joins composite primary keys into one text key, the same on SQLi
 TABLES: dict[str, tuple[list[str], str]] = {
     "workspaces": (["id"], "id"),
     "members": (["id"], "workspace_id"),
+    "member_scopes": (["member_id", "node_id"], "workspace_id"),  # ADR 0014: who may do what, where
+    "seats": (["id"], "workspace_id"),
+    "invites": (["id"], "workspace_id"),
+    "devices": (["id"], "workspace_id"),  # token hashes only, so every worker refuses a revoked phone
     "nodes": (["id"], "workspace_id"),
     "node_aliases": (["node_id", "alias"], "nodes:node_id"),
     "edges": (["id"], "workspace_id"),
@@ -57,6 +61,20 @@ TABLES: dict[str, tuple[list[str], str]] = {
 }
 ORDER = list(TABLES)  # parents before children
 IGNORED_COLUMNS = {"action_log": {"synced_at"}}  # bookkeeping, not a change
+# The tables supabase/migrations/0005 was generated for. 0005 has shipped and never changes: a table added later gets
+# its capture trigger from the migration that adds it (0007 for the ADR 0014 tables).
+PHASE6_TABLES = ["workspaces", "members", "nodes", "node_aliases", "edges", "captures", "capture_events", "notes",
+                 "tasks", "alerts", "profile_facts", "inbox", "action_log", "notifications", "route_corrections"]
+
+# ADR 0014: each journal row also says who made the change, the node the row hangs off, how visible that node was
+# (its eff_level) and which version of the row the author edited (base). nc_sync_annotate fills what the insert left
+# empty: a local change takes the actor of its transaction and the row's last journaled version; a change received
+# from a peer keeps what the peer sent. A delete takes the node and level of the row's last journaled version.
+JOURNAL_COLUMNS = [("author_member_id", "text"), ("author_level", "integer"), ("node_id", "text"), ("vis", "integer"),
+                   ("base_ts", "text"), ("base_origin", "text")]
+NODE_COLUMN = {"nodes": "id", "node_aliases": "node_id", "edges": "src_id", "notes": "node_id", "tasks": "node_id",
+               "alerts": "node_id", "route_corrections": "node_id", "action_log": "node_id",
+               "member_scopes": "node_id"}
 
 JOURNAL_SQLITE = """
 create table if not exists sync_state (key text primary key, value text);
@@ -127,9 +145,72 @@ def _pg_workspace() -> str:
 PG_FUNCTION = PG_FUNCTION_TEMPLATE.replace("{WORKSPACE}", _pg_workspace())
 
 
-def pg_triggers() -> list[str]:
+def _annotate_sqlite() -> str:
+    node = " ".join(f"when '{t}' then json_extract(NEW.row, '$.{c}')" for t, c in NODE_COLUMN.items() if t != "nodes")
+    prev = ("(select p.{col} from sync_changes p where p.tbl = NEW.tbl and p.pk = NEW.pk and p.seq < NEW.seq "
+            "order by p.seq desc limit 1)")
+    local = "NEW.via is null and NEW.base_ts is null"
+    level = "(select n.eff_level from nodes n where n.id = json_extract(NEW.row, '$.{end}'))"
+    return f"""create trigger nc_sync_annotate after insert on sync_changes begin
+  update sync_changes set
+    author_member_id = coalesce(NEW.author_member_id, (select value from sync_state where key = 'actor_member')),
+    author_level = coalesce(NEW.author_level, (select cast(value as integer) from sync_state where key = 'actor_level')),
+    base_ts = case when {local} then {prev.format(col="ts")} else NEW.base_ts end,
+    base_origin = case when {local} then {prev.format(col="origin")} else NEW.base_origin end,
+    node_id = coalesce(NEW.node_id, case NEW.tbl when 'nodes' then NEW.pk {node} end, {prev.format(col="node_id")})
+  where seq = NEW.seq;
+  update sync_changes set vis = coalesce(NEW.vis, case NEW.tbl
+      when 'nodes' then json_extract(NEW.row, '$.eff_level')
+      when 'captures' then json_extract(NEW.row, '$.eff_level')
+      when 'capture_events' then (select c.eff_level from captures c where c.id = json_extract(NEW.row, '$.capture_id'))
+      when 'edges' then min({level.format(end="src_id")}, {level.format(end="dst_id")})
+      when 'profile_facts' then case json_extract(NEW.row, '$.visibility') when 'owner' then 1 when 'manager' then 2
+                                when 'all' then 3 end
+      else (select n.eff_level from nodes n where n.id = sync_changes.node_id) end, {prev.format(col="vis")})
+  where seq = NEW.seq;
+end"""
+
+
+def _annotate_pg() -> str:
+    node = " ".join(f"when '{t}' then r->>'{c}'" for t, c in NODE_COLUMN.items() if t != "nodes")
+    level = "(select n.eff_level from nodes n where n.id = r->>'{end}')"
+    return f"""create or replace function nc_sync_annotate() returns trigger language plpgsql security definer
+set search_path from current as $f$
+declare r jsonb; p_ts text; p_origin text; p_node text; p_vis integer;
+begin
+  select s.ts, s.origin, s.node_id, s.vis into p_ts, p_origin, p_node, p_vis from sync_changes s
+    where s.tbl = NEW.tbl and s.pk = NEW.pk order by s.seq desc limit 1;
+  if NEW.row is not null then r := NEW.row::jsonb; end if;
+  NEW.author_member_id := coalesce(NEW.author_member_id, nullif(current_setting('notecad.member', true), ''));
+  NEW.author_level := coalesce(NEW.author_level, nullif(current_setting('notecad.level', true), '')::integer);
+  if NEW.via is null and NEW.base_ts is null then
+    NEW.base_ts := p_ts;
+    NEW.base_origin := p_origin;
+  end if;
+  NEW.node_id := coalesce(NEW.node_id, case NEW.tbl when 'nodes' then NEW.pk {node} end, p_node);
+  NEW.vis := coalesce(NEW.vis, case NEW.tbl
+    when 'nodes' then (r->>'eff_level')::integer
+    when 'captures' then (r->>'eff_level')::integer
+    when 'capture_events' then (select c.eff_level from captures c where c.id = r->>'capture_id')
+    when 'edges' then least({level.format(end="src_id")}, {level.format(end="dst_id")})
+    when 'profile_facts' then case r->>'visibility' when 'owner' then 1 when 'manager' then 2 when 'all' then 3 end
+    else (select n.eff_level from nodes n where n.id = NEW.node_id) end, p_vis);
+  return NEW;
+end $f$"""
+
+
+def pg_journal_upgrade() -> list[str]:
+    """ADR 0014's additions to the Postgres journal: the new columns and the function that fills them."""
+    return ([f"alter table sync_changes add column if not exists {c} {t}" for c, t in JOURNAL_COLUMNS]
+            + [_annotate_pg(), "drop trigger if exists nc_sync_annotate on sync_changes",
+               "create trigger nc_sync_annotate before insert on sync_changes for each row "
+               "execute function nc_sync_annotate()"])
+
+
+def pg_triggers(tables: Iterable[str] | None = None) -> list[str]:
     out = []
-    for t, (pk, _) in TABLES.items():
+    for t in tables if tables is not None else TABLES:
+        pk = TABLES[t][0]
         args = ", ".join(f"'{k}'" for k in pk)
         out.append(f"drop trigger if exists nc_sync_{t} on {t}")
         out.append(f"create trigger nc_sync_{t} after insert or update or delete on {t} "
@@ -152,6 +233,12 @@ def install(db: Database) -> None:
         if db.kind == "sqlite":
             for stmt in [s.strip() for s in JOURNAL_SQLITE.split(";") if s.strip()]:
                 c.execute(stmt)
+            have = {r[1] for r in c.execute("pragma table_info(sync_changes)").fetchall()}
+            for col, typ in JOURNAL_COLUMNS:
+                if col not in have:
+                    c.execute(f"alter table sync_changes add column {col} {typ}")
+            c.execute("drop trigger if exists nc_sync_annotate")
+            c.execute(_annotate_sqlite())
             for t, (pk, _) in TABLES.items():
                 cols = [r[1] for r in c.execute(f"pragma table_info({t})").fetchall()]
                 watched = [x for x in cols if x not in IGNORED_COLUMNS.get(t, set())]
@@ -174,6 +261,8 @@ def install(db: Database) -> None:
                     c.execute(f"create trigger nc_sync_{t}_{name} {sql}")
         else:
             for stmt in [s.strip() for s in JOURNAL_PG.split(";") if s.strip()]:
+                c.execute(stmt)
+            for stmt in pg_journal_upgrade():
                 c.execute(stmt)
             c.execute(PG_FUNCTION)
             for stmt in pg_triggers():

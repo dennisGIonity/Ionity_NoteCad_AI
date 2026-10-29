@@ -81,7 +81,7 @@ def test_sheep_and_tractor_note(farm):
     assert len(tasks) == 2 and all(t["priority"] == "urgent" for t in tasks)
     assert {a["category"] for a in b.db.query("select category from alerts")} == {"health", "breakdown"}
     assert b.graph.node(ids["sheep_health"])["open_alerts"] == 1
-    # owner and Sipho (editor) both get the critical alerts
+    # owner and Sipho (manager) both get the critical alerts
     assert len(b.db.query("select * from notifications where kind='critical_alert'")) == 4
 
 

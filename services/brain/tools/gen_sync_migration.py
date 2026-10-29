@@ -3,6 +3,8 @@
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 """Writes supabase/migrations/0005_sync_hardening.sql from notecad_brain/sync.py, so the cloud journal, its capture
 function and its triggers are the ones the brain installs on Postgres. tests/test_phase6.py fails when they differ.
+0005 has shipped: it covers sync.PHASE6_TABLES, and tables added later get their triggers in their own migration
+(tools/gen_rls_migration.py writes 0007).
 
     .venv\\Scripts\\python.exe tools\\gen_sync_migration.py           # write the file
     .venv\\Scripts\\python.exe tools\\gen_sync_migration.py --check   # exit 1 if the file is out of date
@@ -16,7 +18,7 @@ HERE = Path(__file__).resolve()
 sys.path.insert(0, str(HERE.parents[1]))
 OUT = HERE.parents[3] / "supabase" / "migrations" / "0005_sync_hardening.sql"
 
-from notecad_brain.sync import PG_FUNCTION, pg_triggers  # noqa: E402
+from notecad_brain.sync import PG_FUNCTION, PHASE6_TABLES, pg_triggers  # noqa: E402
 
 HEADER = """-- Ionity NoteCad | Ionity Global (Pty) Ltd | AEDI
 -- Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
@@ -42,7 +44,7 @@ def render() -> str:
              "",
              PG_FUNCTION.strip() + ";",
              ""]
-    parts += [s + ";" for s in pg_triggers()]
+    parts += [s + ";" for s in pg_triggers(PHASE6_TABLES)]
     return "\n".join(parts) + "\n"
 
 
