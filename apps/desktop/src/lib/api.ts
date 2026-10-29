@@ -3,7 +3,8 @@
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Brain (:8788) and companion (:8787) clients. Both default to this machine; override with VITE_ env vars,
 // ?brain= / ?companion= / ?token= in the URL, or the settings popover (kept in this browser only).
-import type { HistoryItem, MindMap, NodeDetail, Pairing, SyncRunResult, SyncStatus, Workspace } from './types'
+import type { Device, HistoryItem, InboxItem, Invite, Me, Member, MindMap, NodeDetail, Pairing, Seat, SyncRunResult,
+  SyncStatus, Workspace } from './types'
 
 const store = {
   get(k: string): string | null {
@@ -119,6 +120,26 @@ export const api = {
   taskState: (id: string, state: 'open' | 'done' | 'cancelled') =>
     brain<unknown>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ state }) }),
   resolveAlert: (id: string) => brain<unknown>(`/alerts/${id}/resolve`, { method: 'POST' }),
+  // ADR 0014: who this app acts as, and the people of the business
+  me: (ws: string) => brain<Me>(`/workspaces/${ws}/me`),
+  members: (ws: string) => brain<Member[]>(`/workspaces/${ws}/members`),
+  seats: (ws: string) => brain<Seat[]>(`/workspaces/${ws}/seats`),
+  addSeats: (ws: string, role: 'manager' | 'employee', count: number) =>
+    brain<{ seats: string[] }>(`/workspaces/${ws}/seats`, json({ role, count })),
+  invites: (ws: string) => brain<Invite[]>(`/workspaces/${ws}/invites`),
+  invite: (ws: string, body: { name: string; role: 'manager' | 'employee'; contact?: string; scope_node_ids?: string[];
+    person_node_id?: string | null }) => brain<{ invite: Invite; code: string; links: string[] }>(`/workspaces/${ws}/invites`, json(body)),
+  revokeInvite: (id: string) => brain<unknown>(`/invites/${id}/revoke`, { method: 'POST' }),
+  setRole: (memberId: string, body: { role?: string; scope_node_ids?: string[] }) =>
+    brain<Member>(`/members/${memberId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  revokeMember: (memberId: string) => brain<unknown>(`/members/${memberId}/revoke`, { method: 'POST' }),
+  devices: (ws: string) => brain<Device[]>(`/workspaces/${ws}/devices`),
+  revokeDevice: (id: string) => brain<unknown>(`/devices/${id}/revoke`, { method: 'POST' }),
+  inbox: (ws: string) => brain<InboxItem[]>(`/workspaces/${ws}/inbox`),
+  decide: (id: string, decision: 'approve' | 'reject', reason?: string) =>
+    brain<unknown>(`/inbox/${id}/resolve`, json({ decision, reason })),
+  setVisibility: (nodeId: string, visibility: 'all' | 'manager' | 'owner') =>
+    brain<unknown>(`/nodes/${nodeId}/visibility`, json({ visibility })),
   ask: (ws: string, text: string, contextNodeId: string | null) =>
     call<{ reply: string; ms: number; model?: string }>(config.companion, `/v1/${ws}/chat`,
       json({ text, context_node_id: contextNodeId })),

@@ -77,6 +77,8 @@ html.tauri .nc-app-map { background: radial-gradient(1200px 700px at 20% 0%, #0b
     --color-slate-400: #475569; --color-slate-500: #64748b; --color-slate-600: #94a3b8; --color-slate-700: #cbd5e1;
     --color-slate-800: #e2e8f0; --color-slate-900: #f1f5f9; --color-slate-950: #f8fafc;
     --color-white: #0f172a;
+    /* light amber text (locks, reminders, the Inbox) reads on a light ground only when it is dark amber */
+    --color-amber-50: #451a03; --color-amber-100: #78350f; --color-amber-200: #92400e;
     color-scheme: light;
   }
   :root:not(.tauri) body {

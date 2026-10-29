@@ -41,6 +41,11 @@ interface PhoneState {
   acceptJoin(): Promise<string | null>
   /** This phone was removed from the business: hand in what it recorded before, then wipe everything. */
   revoked(): Promise<void>
+  /** ADR 0014: who this phone acts as (GET /me), and the Inbox items it may decide or follows */
+  me: Me | null
+  inbox: InboxItem[]
+  decide(id: string, decision: 'approve' | 'reject', reason?: string): Promise<string | null>
+  invite(name: string, role: 'employee' | 'manager'): Promise<{ link?: string; error?: string }>
   init(): Promise<void>
   pair(p: Pairing): Promise<string | null>
   unpair(): Promise<void>
@@ -55,6 +60,10 @@ interface PhoneState {
   undo(id: string): Promise<void>
   refresh(): Promise<void>
 }
+
+export interface Me { member_id: string | null; name: string | null; level: number; role: string; scopes: string[];
+  capabilities: Record<string, string> }
+export interface InboxItem { id: string; kind: string; question: string; event_text: string | null; author_member_id: string | null }
 
 export interface JoinPreview { workspace: string; workspace_id: string; name: string; role: string; scope: string[]; expires_at: string }
 
@@ -129,6 +138,8 @@ export const usePhone = create<PhoneState>((set, get) => ({
   offer: null,
   join: null,
   joinPreview: null,
+  me: null,
+  inbox: [],
   rec: 'idle',
   recStartedAt: 0,
   level: 0,
@@ -221,6 +232,30 @@ export const usePhone = create<PhoneState>((set, get) => ({
     }
   },
 
+  async decide(id, decision, reason) {
+    const p = get().pairing
+    if (!p) return 'Not connected'
+    try {
+      await call(p, `/inbox/${id}/resolve`, { method: 'POST', body: JSON.stringify({ decision, reason }) })
+      await loadPeople(p, set)
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  },
+
+  async invite(name, role) {
+    const p = get().pairing
+    if (!p) return { error: 'Not connected' }
+    try {
+      const r = await call<{ links: string[] }>(p, `/workspaces/${p.ws}/invites`, { method: 'POST', body: JSON.stringify({ name, role }) })
+      // the brain answered at the address this phone uses: that is where the new phone joins too
+      return { link: r.links[0] }
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+  },
+
   async revoked() {
     const p = get().pairing
     if (!p || revoking) return
@@ -248,6 +283,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
       if (isDeviceToken(p.token)) await syncCopy((path) => call(p, path))  // the member's copy, kept for no signal
       const map = await call<MindMap>(p, `/workspaces/${p.ws}/mindmap?tasks=true&notes=0`)
       set({ map, farm: map.workspace.name, reachable: true })
+      void loadPeople(p, set)
       connectLive(p, get, set, map.cursor)
     } catch (e) {
       if (e instanceof RevokedError) void get().revoked()
@@ -383,6 +419,13 @@ export const usePhone = create<PhoneState>((set, get) => ({
   },
 }))
 
+async function loadPeople(p: Pairing, set: (s: Partial<PhoneState>) => void) {
+  try {
+    const me = await call<Me>(p, `/workspaces/${p.ws}/me`)
+    set({ me, inbox: await call<InboxItem[]>(p, `/workspaces/${p.ws}/inbox`) })
+  } catch { /* an older brain: no roles */ }
+}
+
 function deviceName(): string {
   return platform === 'android' ? 'Android phone' : platform === 'ios' ? 'iPhone' : 'Browser'
 }
@@ -476,6 +519,8 @@ function connectLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneSt
     const e = JSON.parse(raw.data)
     lastEvent = Math.max(lastEvent, e.id)
     const id = e.capture_id as string | undefined
+    if (type.startsWith('inbox.')) void loadPeople(p, set)
+    if (type === 'sync.refused') set({ error: `Not taken by the farm: ${e.reason ?? 'not allowed'}` })
     if (!id || !(await outbox.get(id))) {
       if (type === 'action.applied' || type === 'sync.applied') void get().refresh()
       return
@@ -486,14 +531,17 @@ function connectLive(p: Pairing, get: () => PhoneState, set: (s: Partial<PhoneSt
       const where = (e.nodes as { map_path: string }[] | undefined)?.map((n) => n.map_path.split(' > ').slice(-2).join(' › ')) ?? []
       await outbox.patch(id, { summary: [...new Set([...(it?.summary ? it.summary.split(' · ') : []), ...where])].join(' · ') })
     }
-    if (type === 'inbox.created') await outbox.patch(id, { summary: 'Waiting for you in the Inbox on the desktop' })
+    if (type === 'inbox.created') await outbox.patch(id, { summary: e.kind === 'approval' ? 'Part of it waits for a manager to approve' : 'Waiting in the Inbox' })
     if (type === 'capture.completed') await outbox.patch(id, { state: e.state as ItemState, blob: undefined })
     if (type === 'capture.failed') await outbox.patch(id, { state: 'failed', error: e.error, nextTryAt: Number.MAX_SAFE_INTEGER })
     if (type === 'action.undone') await outbox.patch(id, { state: 'undone' })
+    if (type === 'capture.answer') await outbox.patch(id, { summary: e.text as string })
+    if (type === 'action.refused') await outbox.patch(id, { summary: `Not done: ${((e.refused as { reason: string }[]) ?? []).map((r) => r.reason).join('; ')}` })
     set({ items: await outbox.all() })
   }
   for (const t of ['capture.queued', 'stt.transcribing', 'stt.completed', 'router.resolving', 'action.applied', 'inbox.created',
-    'capture.completed', 'capture.failed', 'action.undone', 'sync.applied']) {
+    'capture.completed', 'capture.failed', 'action.undone', 'sync.applied', 'capture.answer', 'action.refused', 'sync.refused',
+    'inbox.resolved']) {
     es.addEventListener(t, (ev) => { void on(t, ev as MessageEvent) })
   }
 }

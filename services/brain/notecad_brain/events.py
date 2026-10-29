@@ -29,7 +29,7 @@ from .common import now_iso
 
 # what only the speaker (and the owners) hear about: their own capture on its way, and what they may not do
 AUTHOR_ONLY = {"capture.queued", "stt.transcribing", "stt.completed", "router.resolving", "capture.completed",
-               "capture.failed", "action.refused", "sync.refused"}
+               "capture.failed", "action.refused", "sync.refused", "capture.answer"}
 NODE_LISTS = ("node_ids", "affected_node_ids", "created_node_ids", "map_node_ids")
 NODE_EVENTS = {"action.applied", "action.undone", "sync.applied", "node.updated", "task.updated", "alert.updated"}
 

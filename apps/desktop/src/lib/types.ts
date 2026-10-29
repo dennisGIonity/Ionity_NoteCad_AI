@@ -93,6 +93,10 @@ export interface MapNode {
   role?: string
   member_id?: string
   person_node_id?: string | null
+  // ADR 0014: who may see it, and a path stub (a scoped member sees only its title)
+  visibility?: 'all' | 'manager' | 'owner'
+  eff_level?: number
+  stub?: boolean
 }
 
 export interface MapEdge {
@@ -140,6 +144,10 @@ export interface CaptureView {
   inbox: { inbox_id: string; idx: number; text: string; question: string; options: InboxOption[]; resolved?: string; dismissed?: boolean }[]
   error?: string
   finishedAt?: number
+  /** ADR 0014: what the brain said back (a spoken admin command), and what the speaker may not do */
+  answer?: string
+  refused?: string[]
+  proposal?: string
 }
 
 export interface NodeDetail {
@@ -221,4 +229,35 @@ export interface Pairing {
   links: string[]
   ready: boolean
   hint: string | null
+}
+
+// ---------------------------------------------------------------- roles, seats, people (ADR 0014)
+export type Outcome = 'allow' | 'confirm' | 'propose' | 'refuse'
+export interface Me {
+  workspace_id: string
+  member_id: string | null
+  name: string | null
+  level: number
+  role: 'system' | 'owner' | 'manager' | 'employee'
+  read_only: boolean
+  scopes: string[]
+  device_id: string | null
+  capabilities: Record<string, Outcome>
+}
+export interface Member {
+  id: string; display_name: string; role: string; level: number; status: string; contact: string | null
+  person_node_id: string | null; seat_id: string | null; read_only: number
+}
+export interface Seat { id: string; role_level: number; status: string; assigned_member_id?: string | null; member_name?: string | null }
+export interface Invite {
+  id: string; seat_id: string; created_by: string | null; created_at: string; expires_at: string; used_at: string | null
+  revoked_at: string | null; profile: { name: string; role: string; contact?: string | null; scope_node_ids?: string[] }
+}
+export interface Device {
+  id: string; member_id: string; member_name?: string | null; name: string; platform: string | null; created_at: string
+  last_seen_at: string | null; revoked_at: string | null; wipe_acked_at: string | null
+}
+export interface InboxItem {
+  id: string; kind: 'place' | 'approval' | 'sync'; question: string; event_text: string | null; capture_id: string | null
+  options: string | InboxOption[]; author_member_id: string | null; created_at: string
 }

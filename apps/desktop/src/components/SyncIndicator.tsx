@@ -2,13 +2,15 @@
 // Author: Dennis Grobler (Wabakipi) <dennis.g@ionity.digital>
 // Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 // Corner status: local store health, live stream, multi-worker sync (Phase 5) and "Pair a phone".
-import { ArrowDownUp, Database, Loader2, RefreshCw, Smartphone } from 'lucide-react'
+import { ArrowDownUp, Database, Inbox, Loader2, RefreshCw, Smartphone, Users } from 'lucide-react'
 import { lazy, Suspense, useState } from 'react'
 import { api, config } from '../lib/api'
-import { useApp } from '../lib/store'
+import { can, useApp } from '../lib/store'
 import { cls, fmtBytes } from '../lib/ui'
 
 const PairPhone = lazy(() => import('./PairPhone').then((m) => ({ default: m.PairPhone })))  // with its QR library
+const PeoplePanel = lazy(() => import('./PeoplePanel').then((m) => ({ default: m.PeoplePanel })))
+const InboxPanel = lazy(() => import('./InboxPanel').then((m) => ({ default: m.InboxPanel })))
 
 const ago = (iso: string | null | undefined) => {
   if (!iso) return 'never'
@@ -20,6 +22,9 @@ export function SyncIndicator() {
   const { sync, syncError, live, lastEventId, refreshSync } = useApp()
   const [open, setOpen] = useState(false)
   const [pairing, setPairing] = useState(false)
+  const [panel, setPanel] = useState<'people' | 'inbox' | null>(null)
+  const me = useApp((s) => s.me)
+  const inbox = useApp((s) => s.inbox)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const peer = sync?.sync
@@ -88,10 +93,18 @@ export function SyncIndicator() {
               {syncMsg && <p className="mt-1 text-slate-400">{syncMsg}</p>}
             </div>
           )}
-          <button type="button" onClick={() => setPairing(true)}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/20 px-3 py-1.5 text-sky-100 hover:bg-sky-500/30">
-            <Smartphone className="size-3.5" />Pair a phone
-          </button>
+          {can(me, 'manage_workspace') === 'allow' && !me?.device_id && (
+            <button type="button" onClick={() => setPairing(true)}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/20 px-3 py-1.5 text-sky-100 hover:bg-sky-500/30">
+              <Smartphone className="size-3.5" />Pair a phone
+            </button>
+          )}
+          {can(me, 'invite') === 'allow' && (
+            <button type="button" onClick={() => { setPanel('people'); setOpen(false) }}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-1.5 text-slate-100 hover:bg-white/15">
+              <Users className="size-3.5" />People & seats
+            </button>
+          )}
         </div>
       )}
       <button
@@ -106,7 +119,15 @@ export function SyncIndicator() {
         <span>{label}</span>
         {sync && <span className="text-slate-500">· {pending} {peer?.target ? 'to sync' : 'pending'}</span>}
       </button>
+      {inbox.length > 0 && (
+        <button type="button" data-inbox-count={inbox.length} onClick={() => setPanel('inbox')} title="Inbox: notes to place, proposals to decide"
+          className="nc-glass ml-1 flex items-center gap-1 rounded-full px-2.5 py-1 text-amber-200 hover:text-amber-100">
+          <Inbox className="size-3" />{inbox.length}
+        </button>
+      )}
       {pairing && <Suspense fallback={null}><PairPhone onClose={() => setPairing(false)} /></Suspense>}
+      {panel === 'people' && <Suspense fallback={null}><PeoplePanel onClose={() => setPanel(null)} /></Suspense>}
+      {panel === 'inbox' && <Suspense fallback={null}><InboxPanel onClose={() => setPanel(null)} /></Suspense>}
     </div>
   )
 }

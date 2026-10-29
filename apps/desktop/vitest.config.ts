@@ -12,7 +12,7 @@ export default defineConfig({
   server: { fs: { allow: ['.', core] } },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', '../../packages/core/src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', '../../packages/core/src/**/*.test.ts'],
     // packages/core has no node_modules of its own: its tests use this app's vitest
     alias: { vitest: fileURLToPath(new URL('./node_modules/vitest/dist/index.js', import.meta.url)) },
   },

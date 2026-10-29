@@ -733,8 +733,13 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                 await form.close()
 
     @r.get("/v1/workspaces/{ws}/sync", dependencies=A)
-    def sync(ws: str):
-        return brain.sync_status(ws_ok(ws))
+    def sync(ws: str, request: Request):
+        info = brain.sync_status(ws_ok(ws))
+        v = view_of(request, ws)
+        if not v.all:  # ADR 0014: a member's own counts, not the whole business's
+            info["pending"].update(inbox_open=len(brain.inbox(ws, v)),
+                                   notifications_unsent=len(brain.notifications(ws, unsent=True, view=v)))
+        return info
 
     @r.get("/v1/workspaces/{ws}/keyterms", dependencies=A)
     def keyterms(ws: str, request: Request):

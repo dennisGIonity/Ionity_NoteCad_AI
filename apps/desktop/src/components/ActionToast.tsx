@@ -100,7 +100,7 @@ export function ActionToast() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-100">
             {undone ? 'Undone: nothing from this note is on the map' : s.count ? headline(s)
-              : placed ? `Placed in ${placed.split(' > ').slice(-2).join(' / ')}` : 'One quick question'}
+              : placed ? `Placed in ${placed.split(' > ').slice(-2).join(' / ')}` : cap.answer ? 'NoteCad answered' : cap.proposal ? 'Waiting for approval' : cap.refused?.length ? 'Not done' : 'One quick question'}
           </p>
           {cap.transcript && <p className="mt-0.5 truncate text-xs text-slate-400">“{cap.transcript}”</p>}
           {!undone && uniq.length > 0 && (
@@ -133,6 +133,11 @@ export function ActionToast() {
           ))}
           {!undone && cap.inbox.some((i) => i.resolved) && (
             <p className="mt-2 flex items-center gap-1 text-xs text-emerald-300"><Check className="size-3.5" />Placed. NoteCad will remember those words for next time.</p>
+          )}
+          {cap.answer && <p data-answer className="mt-2 rounded-xl bg-white/5 px-2.5 py-1.5 text-xs text-slate-100">{cap.answer}</p>}
+          {!cap.answer && cap.refused?.map((r) => <p key={r} data-refused className="mt-2 text-xs text-amber-200">Not done: {r}</p>)}
+          {cap.proposal && !cap.answer && (
+            <p data-proposal className="mt-2 text-xs text-sky-200">Part of this waits for approval: it is in the Inbox of whoever decides.</p>
           )}
           {err && <p className="mt-2 text-xs text-rose-300">{err}</p>}
         </div>

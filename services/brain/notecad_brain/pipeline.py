@@ -22,15 +22,15 @@ from pathlib import Path
 
 import httpx
 
-from . import onboarding, text
+from . import admin, onboarding, text
 from .apply import Applier, node_of
 from .common import PROVENANCE, new_id, now_iso, parse_iso, uuid7
 from .config import Settings
 from .db import Database, loads
 from .events import Broker
 from .graph import Graph, GraphError
-from .permissions import (ALLOW, CONFIRM, EMPLOYEE, MANAGER, OWNER, SYSTEM, SYSTEM_PRINCIPAL, Principal, View,
-                          load_principal, owner_principal)
+from .permissions import (ALLOW, CONFIRM, EMPLOYEE, MANAGER, OWNER, REFUSE, SYSTEM, SYSTEM_PRINCIPAL, VISIBILITY,
+                          Principal, View, load_principal, owner_principal, sees_row)
 from .retrieve import Retriever
 from .routers import (ClaudeRouter, LocalRouter, RouteContext, RouterChain, RulesRouter, build_actions,
                       assignee_from_text)
@@ -65,6 +65,9 @@ def describe(a: dict, graph: Graph) -> str:
         n = graph.node(nid) if nid and not str(nid).startswith("tmp:") else None
         return n["title"] if n else "a new branch"
     t = a.get("type")
+    if t == "set_role":
+        role = a.get("role") or ""
+        return f"make {a.get('name') or 'them'} {'an' if role[:1] in 'aeiou' else 'a'} {role}"
     if t == "rename_node":
         return f'rename {title(a.get("node_id"))} to "{a.get("title")}"'
     if t == "move_node":
@@ -317,6 +320,12 @@ class Brain:
                 self.broker.publish(ws, "router.resolving", {"capture_id": cid, "idx": idx, "text": ev,
                                                              "events": len(events), "context_node_id": anchor},
                                     author=author)
+                cmd = admin.parse(ev)  # "make Johan a manager", "restrict Financials to owner only": rules, never a model
+                if cmd is not None:
+                    out = self._admin(ws, cid, idx, ev, cmd, principal, view)
+                    review += out["state"] == "needs_review"
+                    results.append(out)
+                    continue
                 # 3 candidates: only nodes the speaker can see, so no prompt for them holds anything else
                 cands = self.retriever.candidates(ws, ev, anchor=anchor, view=view)
                 if previous and previous not in {c["node_id"] for c in cands}:
@@ -450,9 +459,10 @@ class Brain:
         return picked or self._members(ws, OWNER)
 
     def _propose(self, ws: str, author: Principal, held: list[dict], capture_id: str | None, event_idx: int | None,
-                 event_text: str | None, kind: str = "approval", extra: dict | None = None) -> str:
-        """Held actions become one Inbox item for the members who may approve them."""
-        approvers = self._approvers(ws, author, held) if kind == "approval" else self._members(ws, OWNER)
+                 event_text: str | None, kind: str = "approval", extra: dict | None = None,
+                 to: list[Principal] | None = None) -> str:
+        """Held actions become one Inbox item for the members who may approve them (`to`: a confirm by the speaker)."""
+        approvers = to or (self._approvers(ws, author, held) if kind == "approval" else self._members(ws, OWNER))
         route = [p.member_id for p in approvers if p.member_id]
         what = "; ".join(describe(a, self.graph) for a in held)
         who = author.name or "Someone"
@@ -477,6 +487,89 @@ class Brain:
                                                   "kind": kind, "question": question, "text": event_text,
                                                   "node_ids": nodes}, author=author.member_id, route=route)
         return item_id
+
+    # ================================================================ spoken admin commands (admin.py, ADR 0014)
+    def _find(self, ws: str, spoken: str, view: View) -> str | None:
+        """The branch a command names: its exact title among what the speaker sees, else the best candidate."""
+        want = spoken.strip().lower()
+        for n in self.graph.nodes(ws):
+            if n["title"].lower() == want and view.rows(n["id"]):
+                return n["id"]
+        cands = self.retriever.candidates(ws, spoken, view=view)
+        return cands[0]["node_id"] if cands and cands[0]["score"] >= 0.6 else None
+
+    def _admin(self, ws: str, cid: str, idx: int, ev: str, cmd: admin.Command, p: Principal, view: View) -> dict:
+        row = {"capture_id": cid, "idx": idx, "text": ev, "candidates": [], "router": "admin", "confidence": 1.0}
+
+        def say(text: str, state: str = "applied", **extra) -> dict:
+            self._upsert_event({**row, "routed": {"admin": cmd.kind, "answer": text}}, state)
+            self.broker.publish(ws, "capture.answer", {"capture_id": cid, "idx": idx, "text": text, **extra},
+                                author=p.member_id)
+            return {"idx": idx, "state": state, "router": "admin", "answer": text, **extra}
+
+        def refuse(reason: str) -> dict:  # polite, and logged (decision 28)
+            with self.db.tx():
+                self.db.insert("action_log", {"id": new_id(), "workspace_id": ws, "capture_id": cid, "event_idx": idx,
+                                              "seq": 0, "actor": "user:voice",
+                                              "action": {"type": "refused", "action": cmd.kind, "reason": reason},
+                                              "inverse": {"op": "none"}, "provenance": PROVENANCE, "undone_at": None,
+                                              "created_at": now_iso(), "member_id": p.member_id,
+                                              "member_level": p.level or None, "approved_by": None, "node_id": None})
+            self.broker.publish(ws, "action.refused", {"capture_id": cid, "idx": idx, "text": ev,
+                                                       "refused": [{"type": cmd.kind, "reason": reason}]},
+                                author=p.member_id)
+            return say(reason)
+
+        if cmd.kind == "role":
+            if p.decide("set_role") != ALLOW:
+                return refuse("Only an owner can change someone's role.")
+            from rapidfuzz import fuzz
+
+            def score(m: dict) -> float:
+                name = m["display_name"].lower()
+                return max(fuzz.ratio(cmd.target.lower(), name), fuzz.ratio(cmd.target.lower(), name.split()[0]))
+            members = [m for m in self.graph.members(ws) if m["status"] == "active"]
+            best = max(members, key=score, default=None)
+            if best is None or score(best) < 85:
+                return say(f"I do not know who {cmd.target} is.")
+            act = {"type": "set_role", "member_id": best["id"], "role": cmd.value, "name": best["display_name"]}
+            item = self._propose(ws, p, [act], cid, idx, ev, to=[p])  # a misheard name must not change a role
+            text = describe(act, self.graph)
+            return say(f"{text[:1].upper()}{text[1:]}? Confirm it in the Inbox.", "needs_review",
+                       proposal=item)
+        if cmd.kind == "who" and p.level > MANAGER:
+            return refuse("Only owners and managers can ask who sees a branch.")
+        if cmd.kind == "visibility" and p.decide("set_visibility") == REFUSE:
+            return refuse("Only owners and managers can change who sees a branch.")
+        node = self._find(ws, cmd.target, view)
+        if node is None:
+            return say(f"I cannot find {cmd.target} on your map.")
+        n = self.graph.node(node) or {}
+        label = {"all": "visible to everyone", "manager": "for managers and owners", "owner": "for owners only"}
+        if cmd.kind == "who":
+            if p.level > MANAGER:
+                return refuse("Only owners and managers can ask who sees a branch.")
+            names = []
+            for m in self.graph.members(ws):
+                q = load_principal(self.db, ws, m["id"]) if m["status"] == "active" else None
+                if q is not None and sees_row(q, n["path"], n["eff_level"]):
+                    names.append(m["display_name"])
+            lvl = {1: "owner", 2: "manager"}.get(n["eff_level"], "all")
+            return say(f"{n['title']} is {label[lvl]}: {', '.join(names) or 'nobody yet'} can see it.")
+        act = {"type": "set_visibility", "node_id": node, "visibility": cmd.value}
+        outcome, reason = self.applier.judge(view, act, set())
+        if outcome == REFUSE:
+            return refuse(reason or "You cannot change who sees that branch.")
+        if VISIBILITY[str(cmd.value)] < VISIBILITY.get(n.get("visibility") or "all", EMPLOYEE):  # tighter: at once
+            res = self.applier.apply(ws, cid, idx, [act], "user:voice", principal=p, view=view, confirmed=True)
+            if res.get("status") == "applied":
+                for nid in self._with_ancestors([node]):
+                    self._node_event(ws, nid, cid)
+                return say(f"Done: {n['title']} is now {label[str(cmd.value)]}.")
+            return refuse(res["refused"][0]["reason"] if res.get("refused") else "That needs someone else's approval.")
+        item = self._propose(ws, p, [act], cid, idx, ev, to=[p])  # looser: confirm first
+        return say(f"Make {n['title']} {label[str(cmd.value)]}? Confirm it in the Inbox.", "needs_review",
+                   proposal=item)
 
     def change(self, principal: Principal, ws: str, actions: list[dict], *, actor: str = "user:app",
                confirmed: bool = True, text: str | None = None) -> dict:
@@ -776,10 +869,16 @@ class Brain:
         if principal.level > OWNER and principal.member_id not in (loads(item.get("route_member_ids"), []) or []):
             raise PermissionError("this proposal is for someone else")
         proposal = loads(item["proposal"], {}) or {}
+        acts = proposal.get("actions", [])
+        for a in [a for a in acts if a.get("type") == "set_role"]:  # a spoken role change, confirmed now
+            self.people.set_role(principal, ws, a["member_id"], role=a["role"])
+        acts = [a for a in acts if a.get("type") != "set_role"]
         if (item.get("kind") or "") == "sync":
             res = self.journal.apply_proposal(proposal.get("change") or {}, principal)
+        elif not acts:
+            res = {"status": "applied", "nodes": []}
         else:
-            res = self.applier.apply(ws, item["capture_id"], item["event_idx"], proposal.get("actions", []),
+            res = self.applier.apply(ws, item["capture_id"], item["event_idx"], acts,
                                      "user:approve", principal=principal, view=view,
                                      author=item.get("author_member_id") or principal.member_id,
                                      approved_by=principal.member_id or "system", confirmed=True)

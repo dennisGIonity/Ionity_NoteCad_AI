@@ -5,7 +5,7 @@
 // reminder badge), field (progress fill, last update, decay), task leaf, member.
 import * as F from '@notecad/core/fold'
 import { Handle, Position, useStore, type NodeProps, type Node, type ReactFlowState } from '@xyflow/react'
-import { AlertTriangle, Bell, ChevronDown, ChevronRight, CircleDot, ListTodo, Users } from 'lucide-react'
+import { AlertTriangle, Bell, ChevronDown, ChevronRight, CircleDot, ListTodo, Lock, Users } from 'lucide-react'
 import { memo, type MouseEvent, type ReactNode } from 'react'
 import type { CardData } from '../../lib/layout'
 import { useApp } from '../../lib/store'
@@ -13,6 +13,21 @@ import type { MapNode, Status } from '../../lib/types'
 import { ago, cls, due, iconFor, progressLabel, STATUS_LABEL, statusColor } from '../../lib/ui'
 
 type P = NodeProps<Node<CardData>>
+
+/** ADR 0014: a lock and its level on a branch restricted itself; a faint lock where it is restricted from above. */
+export function LockBadge({ n }: { n: MapNode }) {
+  const lvl = n.eff_level ?? 3
+  if (lvl >= 3) return null
+  const own = (n.visibility ?? 'all') !== 'all'
+  const who = lvl === 1 ? 'owners' : 'managers'
+  return (
+    <span data-lock={who} title={own ? `Only ${who} see this branch` : `Only ${who} see this (set on a branch above)`}
+      className={cls('inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide',
+        own ? 'bg-amber-400/20 text-amber-100' : 'text-amber-200/50')}>
+      <Lock className="size-2.5" />{own && who}
+    </span>
+  )
+}
 
 function Handles() {
   const hide = '!size-1 !min-h-0 !min-w-0 !border-0 !bg-transparent'
@@ -169,7 +184,7 @@ export const CategoryCard = memo(({ data, selected }: P) => {
           </div>
         </Ring>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{n.title}</div>
+          <div className="flex min-w-0 items-center gap-1"><span className="truncate text-sm font-semibold">{n.title}</span><LockBadge n={n} /></div>
           <div className="truncate text-[11px] text-slate-400">{things}{n.progress_pct != null && ` · ${Math.round(n.progress_pct)}%`}</div>
           <div className="mt-1 flex gap-1">
             <Badge icon={<AlertTriangle className="size-3" />} n={n.counts.subtree_open_alerts ?? 0} tone="alert" title="Open alerts under this" />
@@ -198,7 +213,7 @@ export const AssetCard = memo(({ data, selected }: P) => {
           <Icon className="size-5 text-slate-200" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold" title={n.title}>{n.title}</div>
+          <div className="flex min-w-0 items-center gap-1"><span className="truncate text-sm font-semibold" title={n.title}>{n.title}</span><LockBadge n={n} /></div>
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
             <span style={{ color: statusColor(st) }}>{STATUS_LABEL[st]}</span>
             {n.channels?.some((c) => c.open_alerts) && <span>· {n.channels.find((c) => c.open_alerts)!.title}</span>}
@@ -241,7 +256,7 @@ export const FieldCard = memo(({ data, selected }: P) => {
     <Shell data={data} selected={selected} className="w-[260px] bg-slate-900/85">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{n.title}</div>
+          <div className="flex min-w-0 items-center gap-1"><span className="truncate text-sm font-semibold">{n.title}</span><LockBadge n={n} /></div>
           <div className="text-[11px] text-slate-400">{[area, n.attributes?.phase as string | undefined].filter(Boolean).join(' · ') || n.kind}</div>
         </div>
         {decay && decay.state !== 'settled' && (

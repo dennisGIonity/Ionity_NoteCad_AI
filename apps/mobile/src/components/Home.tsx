@@ -11,6 +11,7 @@ import type { NativeItem } from '../lib/native'
 import type { OutboxItem } from '../lib/outbox'
 import * as F from '@notecad/core/fold'
 import { usePhone } from '../lib/phone'
+import { TeamSheet } from './TeamSheet'
 import { useShallow } from 'zustand/react/shallow'
 
 const STATE: Record<string, { label: string; tone: string }> = {
@@ -43,6 +44,7 @@ function Status() {
     <header className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="truncate text-lg font-semibold text-slate-50">{farm ?? pairing?.name ?? pairing?.ws}</p>
+        {pairing?.member && <p data-me className="truncate text-xs text-slate-400">{pairing.member.name} · {pairing.member.role}</p>}
         <button type="button" onClick={() => void refresh()} className={`flex items-center gap-1.5 text-xs ${tone}`}>
           <Icon className={`size-3.5 ${Icon === Loader2 ? 'animate-spin' : ''}`} />{label}
         </button>
@@ -54,7 +56,10 @@ function Status() {
 
 function Menu() {
   const unpair = usePhone((s) => s.unpair)
+  const me = usePhone((s) => s.me)
+  const waiting = usePhone((s) => s.inbox.length)
   const [open, setOpen] = useState(false)
+  const [team, setTeam] = useState(false)
   return (
     <div className="relative">
       <button type="button" aria-label="Menu" onClick={() => setOpen((o) => !o)} className="grid size-10 place-items-center rounded-full bg-white/5 text-slate-300">
@@ -63,11 +68,17 @@ function Menu() {
       {open && (
         <div className="nc-glass absolute right-0 top-12 z-20 w-56 rounded-2xl p-2 text-sm">
           <p className="px-3 py-2 text-xs text-slate-400">{usePhone.getState().pairing?.url}</p>
+          {((me && me.level <= 2) || waiting > 0) && (
+            <button type="button" onClick={() => { setOpen(false); setTeam(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-100 hover:bg-white/5">
+              <ListTodo className="size-4" />Team & Inbox{waiting ? ` (${waiting})` : ''}
+            </button>
+          )}
           <button type="button" onClick={() => { setOpen(false); void unpair() }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-rose-200 hover:bg-white/5">
             <LogOut className="size-4" />Disconnect this phone
           </button>
         </div>
       )}
+      {team && <TeamSheet onClose={() => setTeam(false)} />}
     </div>
   )
 }

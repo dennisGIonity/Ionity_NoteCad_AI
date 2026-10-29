@@ -4,12 +4,12 @@
 // Node inspector: status, progress, open tasks and alerts, the full action log, a mic that records a note for
 // this node (context-anchored capture) and a companion ask bar that knows which node is open.
 import {
-  AlertTriangle, ArrowUp, Bot, Check, CircleDot, History, ListTodo, Loader2, Mic, NotebookPen, Square, Undo2, X,
+  AlertTriangle, ArrowUp, Bot, Check, CircleDot, History, ListTodo, Loader2, Lock, Mic, NotebookPen, Square, Undo2, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useRecorder } from '../lib/recorder'
-import { useApp } from '../lib/store'
+import { can, useApp } from '../lib/store'
 import type { HistoryItem, NodeDetail } from '../lib/types'
 import { ago, cls, due, iconFor, progressLabel, STATUS_LABEL, statusColor } from '../lib/ui'
 import { Ring } from './nodes/Cards'
@@ -62,6 +62,7 @@ function Reply({ text }: { text: string }) {
 
 export function Inspector() {
   const { selected, select, map, ws } = useApp()
+  const me = useApp((s) => s.me)
   const rec = useRecorder()
   const node = map?.nodes.find((n) => n.id === selected)
   const [detail, setDetail] = useState<NodeDetail | null>(null)
@@ -130,6 +131,16 @@ export function Inspector() {
                 <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: `${statusColor(st)}22`, color: statusColor(st) }}>{STATUS_LABEL[st]}</span>
                 {progressLabel(node) && <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-emerald-200">{progressLabel(node)}</span>}
                 {node.updated_at && <span className="text-slate-500">updated {ago(node.updated_at)}</span>}
+                {can(me, 'set_visibility') !== 'refuse' && node.type !== 'root' && !node.virtual ? (
+                  <label className="flex items-center gap-1 text-slate-400"><Lock className="size-3" />
+                    <select aria-label="Who can see this branch" value={node.visibility ?? 'all'} disabled={busy === 'vis'}
+                      onChange={(e) => void act('vis', () => api.setVisibility(node.id, e.target.value as 'all' | 'manager' | 'owner'))}
+                      className="rounded bg-white/5 px-1 py-0.5 text-[11px] text-slate-200">
+                      <option value="all">Everyone</option><option value="manager">Managers</option>
+                      {me?.level === 1 && <option value="owner">Owners only</option>}
+                    </select>
+                  </label>
+                ) : (node.eff_level ?? 3) < 3 && <span className="flex items-center gap-1 text-amber-200"><Lock className="size-3" />{node.eff_level === 1 ? 'owners' : 'managers'}</span>}
               </div>
             </div>
             <button type="button" aria-label="Close" onClick={() => select(null)} className="grid size-8 place-items-center rounded-full text-slate-400 hover:bg-white/10"><X className="size-4" /></button>
@@ -152,7 +163,7 @@ export function Inspector() {
                   <AlertTriangle className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate" title={a.title}>{a.title}</span>
                   <button type="button" disabled={busy === a.id} onClick={() => act(a.id, () => api.resolveAlert(a.id))}
-                    className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 hover:bg-white/20">{busy === a.id ? '…' : 'Resolve'}</button>
+                    className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 hover:bg-white/20">{busy === a.id ? '…' : can(me, 'resolve_alert') === 'allow' ? 'Resolve' : 'Ask to resolve'}</button>
                 </div>
               ))}
             </div>
@@ -174,7 +185,7 @@ export function Inspector() {
                 <ul className="space-y-1.5">
                   {openTasks.map((t) => (
                     <li key={t.id} className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2">
-                      <button type="button" aria-label="Mark done" disabled={busy === t.id} onClick={() => act(t.id, () => api.taskState(t.id, 'done'))}
+                      <button type="button" aria-label={me && me.level === 3 && t.assignee_member !== me.member_id ? 'Ask to mark done' : 'Mark done'} disabled={busy === t.id} onClick={() => act(t.id, () => api.taskState(t.id, 'done'))}
                         className="mt-0.5 grid size-4.5 shrink-0 place-items-center rounded-full border border-slate-500 text-transparent hover:border-emerald-400 hover:text-emerald-400">
                         {busy === t.id ? <Loader2 className="size-3 animate-spin text-slate-300" /> : <Check className="size-3" />}
                       </button>

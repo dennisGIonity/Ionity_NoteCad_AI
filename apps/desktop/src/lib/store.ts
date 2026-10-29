@@ -6,7 +6,7 @@ import * as F from '@notecad/core/fold'
 import { create } from 'zustand'
 import { api, config } from './api'
 import { mapTree, type MapTree } from './maptree'
-import type { CaptureView, LiveEvent, MindMap, SyncStatus, Workspace } from './types'
+import type { CaptureView, InboxItem, LiveEvent, Me, MindMap, Outcome, SyncStatus, Workspace } from './types'
 
 export type View = 'hud' | 'map'
 export type Layout = 'tree' | 'radial'
@@ -14,7 +14,7 @@ export type LiveState = 'connecting' | 'live' | 'reconnecting' | 'off'
 
 export const EVENT_TYPES = ['capture.queued', 'stt.transcribing', 'stt.completed', 'router.resolving', 'action.applied',
   'inbox.created', 'capture.completed', 'capture.failed', 'action.undone', 'node.updated', 'task.updated',
-  'alert.updated', 'inbox.resolved', 'sync.applied']
+  'alert.updated', 'inbox.resolved', 'sync.applied', 'action.refused', 'capture.answer', 'sync.refused']
 export const REFRESHING = new Set(['action.applied', 'action.undone', 'node.updated', 'inbox.resolved', 'task.updated', 'alert.updated', 'capture.completed', 'sync.applied'])
 const HIGHLIGHT_MS = 6000
 
@@ -40,6 +40,11 @@ interface AppState {
   typeRequest: number
   sync: SyncStatus | null
   syncError: string | null
+  /** ADR 0014: who this app acts as (GET /me), and the Inbox items it may decide or follows */
+  me: Me | null
+  inbox: InboxItem[]
+  refreshMe(): Promise<void>
+  refreshInbox(): Promise<void>
   setView(v: View): void
   setLayout(l: Layout): void
   select(id: string | null): void
@@ -116,6 +121,8 @@ export const useApp = create<AppState>((set, get) => ({
   typeRequest: 0,
   sync: null,
   syncError: null,
+  me: null,
+  inbox: [],
 
   setView: (view) => set({ view }),
   setLayout: (layout) => set({ layout, fold: loadFold(get().ws, layout) }),
@@ -156,7 +163,7 @@ export const useApp = create<AppState>((set, get) => ({
     source?.close()
     source = null
     set({ ws, map: null, captures: {}, activeCapture: null, selected: null, highlights: {}, fold: loadFold(ws, get().layout), foldAnchor: null })
-    await get().refreshMap()
+    await Promise.all([get().refreshMap(), get().refreshMe(), get().refreshInbox()])
     if (get().ws !== ws) return  // another switch happened while the map loaded
     const cursor = get().map?.cursor ?? 0
     set({ lastEventId: cursor, live: 'connecting' })
@@ -182,6 +189,18 @@ export const useApp = create<AppState>((set, get) => ({
     } catch (e) {
       set({ mapError: (e as Error).message })
     }
+  },
+
+  async refreshMe() {
+    const ws = get().ws
+    if (!ws) return
+    try { set({ me: await api.me(ws) }) } catch { set({ me: null }) }
+  },
+
+  async refreshInbox() {
+    const ws = get().ws
+    if (!ws) return
+    try { set({ inbox: await api.inbox(ws) }) } catch { /* kept as it was */ }
   },
 
   async refreshSync() {
@@ -249,6 +268,7 @@ export const useApp = create<AppState>((set, get) => ({
       clearTimeout(refreshTimer)
       refreshTimer = setTimeout(() => get().refreshMap(), 250)
     }
+    if (e.type === 'inbox.created' || e.type === 'inbox.resolved') void get().refreshInbox()
     if (e.type === 'capture.completed' || e.type === 'capture.failed' || e.type === 'action.undone' || e.type === 'sync.applied') get().refreshSync()
   },
 }))
@@ -270,8 +290,10 @@ export function reduceCapture(c: CaptureView, e: LiveEvent): CaptureView {
           tasks: (e.tasks as number) ?? 0, alerts: (e.alerts as number) ?? 0, notes: (e.notes as number) ?? 0,
           delegated: (e.delegated as { to: string }[]) ?? [],
         }],
+        proposal: (e.proposal as string | undefined) ?? c.proposal,
       }
     case 'inbox.created':
+      if (e.kind === 'approval' || e.kind === 'sync') return { ...c, proposal: e.inbox_id as string }  // the Inbox panel has it
       return {
         ...c, inbox: [...c.inbox.filter((i) => i.inbox_id !== e.inbox_id), {
           inbox_id: e.inbox_id as string, idx: e.idx as number, text: e.text as string, question: e.question as string,
@@ -286,6 +308,10 @@ export function reduceCapture(c: CaptureView, e: LiveEvent): CaptureView {
       return { ...c, state: 'failed', error: e.error as string, finishedAt: Date.now() }
     case 'action.undone':
       return { ...c, state: 'undone' }
+    case 'capture.answer':
+      return { ...c, answer: e.text as string, proposal: (e.proposal as string | undefined) ?? c.proposal }
+    case 'action.refused':
+      return { ...c, refused: [...(c.refused ?? []), ...((e.refused as { reason: string }[]) ?? []).map((r) => r.reason)] }
     default:
       return c
   }
@@ -314,4 +340,11 @@ export function headline(s: { count: number; where: string }) {
   if (s.count !== 1) return `Updated ${s.count} nodes in ${s.where}`
   const parts = s.where.split(' / ')
   return parts.length > 1 ? `Updated ${parts.pop()} in ${parts.join(' / ')}` : `Updated ${s.where}`
+}
+
+/** May this app offer an action? From GET /me (the brain still decides every request). An unknown or missing "me"
+ *  (an older brain) offers everything, as before roles. */
+export function can(me: Me | null, action: string): Outcome {
+  if (!me) return 'allow'
+  return me.capabilities[action] ?? 'refuse'
 }
