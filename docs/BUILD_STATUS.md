@@ -38,6 +38,18 @@ public, so the runners are free. Step logs need a GitHub sign-in; test counts ar
 The prompt, compute type and beam move WER by about a point; the model sets the floor. No Icelandic or Dutch text
 reaches the router any more, and the English showcase recordings stay English.
 
+**Afrikaans, second pass: the prompt's language and large-v3** (same prompts and GPU load for both models; 19 English
+clips added: the showcase recordings and 16 golden notes in a Windows voice; ADR 0013 addendum)
+
+| Whisper, as the brain calls it | Afrikaans | English | s/clip af / en |
+|---|---|---|---|
+| turbo, English prompt (before) | 36.8 % | 6.1 % | 0.79 / 0.64 |
+| **turbo, prompt in the picked language (now, default)** | **34.7 %** | **6.1 %** | 0.80 / 0.63 |
+| large-v3, prompt in the picked language (`NC_BRAIN_WHISPER_MODEL=large-v3`) | 32.2 % | 2.8 % | 1.42 / 0.88 |
+
+large-v3 fits in VRAM next to Gemma (7.2 of 8.2 GB in use) but is about twice as slow on Afrikaans; turbo stays the
+default until field recordings decide.
+
 **Also fixed in CI itself:** on the Windows runner PowerShell checked only the last command of each step (a failing
 lint would have passed); every job now runs bash with `pipefail`. Actions moved to current majors (Node 24). A failing
 Android build or test writes its error and cause chain as annotations, readable without a sign-in. Robolectric on
@@ -49,8 +61,8 @@ phone Vitest 2, Android unit tests 12, APK and installers built. On WABAKIPI: br
 
 **Still open**
 - Claude routing and prompt caching: needs `ANTHROPIC_API_KEY` in `E:\.claude\_vault\notecad.env`.
-- Afrikaans accuracy: about 34-35 % WER on turbo. Next steps to weigh: full large-v3 (3 GB download, slower), or a
-  language switch in the apps that sends `lang_hint=af` (33.6 %, a third faster, but English notes need it off).
+- Afrikaans accuracy: 34.7 % WER on turbo with the prompt in the picked language; large-v3 32.2 % at twice the time
+  (downloaded, one setting away). Field recordings of the owner should decide between them.
 - Code signing: the CI installers and APK are unsigned. Smart App Control will block the Tauri window on WABAKIPI
   until it is signed; the APK needs a release key for anything beyond sideloading.
 - The APK on a real phone; iOS on a Mac with Xcode 16+.

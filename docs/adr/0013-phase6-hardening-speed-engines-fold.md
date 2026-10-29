@@ -142,3 +142,26 @@ more in message passing than the layout itself (measured in Stage 4). ELK is hea
   run against a database in this phase.
 - No Claude key in the vault: Claude prompt caching is still to do and to measure.
 - Results and what is still open: `docs\BUILD_STATUS.md`.
+
+## Addendum (29 October 2026): Afrikaans speech, measured
+
+The Stage 3 speech row kept turbo "without Afrikaans evidence". Evidence now: 120 clips of Google FLEURS af_za (read
+speech, CC-BY-4.0) and 19 English clips (the 3 showcase recordings, 16 golden notes in a Windows voice),
+`tools\afrikaans_wer.py`, all numbers in `docs\perf\afrikaans-wer.json`. Same prompts and GPU load for both models.
+
+| Whisper, called as the brain calls it (no hint; picks en or af) | Afrikaans WER | English WER | s per clip (af / en) | VRAM in use after load |
+|---|---|---|---|---|
+| large-v3-turbo, English prompt (before) | 36.8 % | 6.1 % | 0.79 / 0.64 | 6.97 GB of 8.19 |
+| **large-v3-turbo, prompt in the picked language (now)** | **34.7 %** | **6.1 %** | 0.80 / 0.63 | 6.97 GB |
+| large-v3, English prompt | 38.9 % | 2.8 % | 1.28 / 0.89 | 7.22 GB |
+| large-v3, prompt in the picked language | 32.2 % | 2.8 % | 1.42 / 0.88 | 7.22 GB |
+
+Decisions:
+- `NC_BRAIN_STT_LANGUAGES` (default `en,af`): with no hint Whisper picks only from the owner's languages (before,
+  11 of 120 Afrikaans clips came out as English, Icelandic or Dutch).
+- The keyterm prompt is written in the picked language (`WhisperSTT.PROMPTS`): an English sentence on Afrikaans speech
+  cost 2 points on turbo and 7 on large-v3; English notes lost nothing.
+- Compute type and beam do not matter here (int8_float16 and beam 1 within a point); the model sets the floor.
+- **large-v3 is better on both languages but twice as slow on Afrikaans and not clear-cut**: turbo stays the default.
+  `NC_BRAIN_WHISPER_MODEL=large-v3` switches (the model is in `models\whisper`, 3.1 GB). The English gain is on 19
+  clips, 16 of them a synthetic voice; field recordings should decide.

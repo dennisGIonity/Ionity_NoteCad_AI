@@ -62,8 +62,9 @@ Routing details (ADR 0013): Gemma sees short labels (n1, n2 ...) not node ids; p
 sure of skip the model (`rules:sure`; `NC_BRAIN_RULES_FAST_PATH=0` turns it off). Map fold state is view state in
 `localStorage` (`notecad.fold.<ws>.<layout>`), never synced; `localStorage notecad.layoutEngine=dagre` brings back
 the old layout engine. Speech: the apps send no language hint, so Whisper picks the likeliest of
-`NC_BRAIN_STT_LANGUAGES` (default `en,af`; empty: any language). Afrikaans on large-v3-turbo is about 34-35 % WER on
-FLEURS whatever the settings (`docs\perf\afrikaans-wer.json`).
+`NC_BRAIN_STT_LANGUAGES` (default `en,af`; empty: any language), and the keyterm prompt is written in the picked
+language (`WhisperSTT.PROMPTS`). FLEURS Afrikaans WER: turbo 34.7 %, large-v3 32.2 % at twice the time
+(`NC_BRAIN_WHISPER_MODEL=large-v3`, already in `models\whisper`); English 6.1 / 2.8 % (`docs\perf\afrikaans-wer.json`).
 
 CI (`.github/workflows/ci.yml`, GitHub Actions on every push; the repo is public, so it is free): brain + companion on
 SQLite and Postgres 17, Supabase 0001-0006 on an empty database, the debug APK + Android unit tests, `cargo check`
