@@ -73,6 +73,9 @@ jobs:
       - name: Supabase 0007-0008 as shipped, 0009 still matches db.py and permissions.py (generated RLS)
         working-directory: services/brain
         run: python tools/gen_rls_migration.py --check
+      - name: The POPIA action register matches the code
+        working-directory: services/brain
+        run: python tools/popia_inventory.py --check
       - name: Brain tests, SQLite and Postgres
         working-directory: services/brain
         env:
