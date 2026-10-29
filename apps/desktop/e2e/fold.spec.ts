@@ -121,9 +121,13 @@ test.describe('fold on the showcase farm', () => {
     await item(page, 'Wabakipi Farm').focus()
     await page.keyboard.press('ArrowDown')
     await expect(item(page, 'Admin')).toBeFocused()
+    const focused = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')
     for (let i = 0; i < 10; i++) {
-      if (await item(page, 'Vehicles').evaluate((e) => e === document.activeElement)) break
+      const was = await focused()
+      if (was === 'Vehicles') break
       await page.keyboard.press('ArrowDown')
+      // focus moves on the next render: wait for it, or the next press skips past (the flake of 29 October 2026)
+      await expect.poll(focused).not.toBe(was)
     }
     await expect(item(page, 'Vehicles')).toBeFocused()
     await page.keyboard.press('ArrowRight')  // open

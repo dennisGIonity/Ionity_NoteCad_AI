@@ -9,6 +9,43 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## POPIA action audit: every action checked, every open finding fixed (29 October 2026)
+
+`docs\compliance\popia-action-register.md` is generated from the code by `tools\popia_inventory.py` (`--check` in CI):
+**133 actions** (75 brain routes, 15 companion routes, 3 spoken commands, 4 background threads, 19 synced tables,
+5 files and copies, 12 app actions): **120 compliant, 13 need a human decision**
+(`docs\compliance\popia-human-actions.md`, 11 items). Assessment v1.1:
+`docs\compliance\Ionity_NoteCad_POPIA_Assessment_v1.1.docx` + PDF.
+
+**Built** (the seven findings v1.0 left open, and what the audit found)
+
+| What | Where | Proof |
+|---|---|---|
+| One person's copy (s23) and erasure (s24), member or a person on the map | `subjects.py`, People & seats, Inspector, phone menu | `test_popia_actions.py`, `e2e/popia.spec.ts` |
+| Cloud transfer gate (s72): off by default, owner per workspace, logged; restricted branches never leave | `routers.py`, `stt.local_only`, `privacy.py` | `test_no_note_leaves_this_pc_while_the_gate_is_off` |
+| The notice before a member's first note (s18); notice v2: Information Officer, workplace monitoring, cloud | `privacy.must_read`, `PrivacyNotice.tsx`, `PrivacySheet.tsx` | `test_a_member_records_nothing_before_reading_the_notice`, e2e |
+| Security headers + CSP; security log (refusals, exports, erasures, deletions, transfers); breach runbook | `api.py`, `breach-runbook.md` | `test_answers_carry_security_headers_and_refusals_are_logged` |
+| Invite code never in a URL: `POST /v1/join/preview`, desktop `#join=` | `api.py`, `App.tsx` | e2e network log + `api.log` |
+| A worker's health or disciplinary details held for the owners (s26-33) | `text.sensitive_about`, pipeline | `test_a_note_with_a_workers_health_is_held_for_the_owners` |
+| Phone token in the Android Keystore | `TokenVault.java` | `TokenVaultTest` (CI) |
+| Retention on hubs too; a Supabase hub's journal compacted; the companion forgets with the period and on deletion | `api.py`, `retention.py`, companion `/forget` | `test_forget_reaches_the_companion_memory` |
+| Disk encryption and the loopback note in the status table | `start_notecad.ps1` | WABAKIPI shows `WARN`: not encrypted |
+
+**Fixed while testing:** the join throttle counted this PC (e2e joins got 429): now only network callers; a flaky
+fold keyboard test (it pressed ArrowDown before focus had moved): now waits for focus; leftover test members matched
+the erasure check: the spec uses a unique name per run.
+
+**Verified.** Brain 193 (169 before), companion 48 (47), desktop 40 (37), phone 10 (7); ruff, pyright,
+`gen_sync`/`gen_rls`/`popia_inventory --check`; `npm ci`, build, lint, test for both apps: all exit 0. CI green
+(Postgres 17, Supabase 0001-0009 twice, Android with TlsPinTest and TokenVaultTest, APK, Tauri). Field test 20/21
+(95.2 %, as before), showcase 3/3. Playwright: three full runs in a row, 25 passed and 1 skipped each (Sync now needs
+the edge node); report in `docs\media\playwright-report`; frame rates at the panel's idle rate.
+
+**Open.** The 11 human actions (Information Officer, operator agreements, lawful basis, legal review of the notice,
+retention on real workspaces, archive period, disk encryption on WABAKIPI, LoRA training, breach owners, the cloud
+gate, children). Needs a real phone: the WebView pinning and Keystore on a device. Needs a Mac: iOS. The `-Lan` path
+was checked with a pinned client on this PC, not from a phone.
+
 ## POPIA: the five high-priority fixes (29 October 2026)
 
 `docs\compliance\Ionity_NoteCad_POPIA_Assessment_v1.0` (technical, not legal advice) found NoteCad not yet compliant in
