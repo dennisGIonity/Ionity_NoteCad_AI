@@ -35,5 +35,18 @@ The first build of the employee's map was +16 %: it copied every node to recompu
 a hidden node (and a scoped employee's path stubs) can roll up differently, so only those are copied and recomputed
 now (`mindmap.as_seen`).
 
-Not measured yet: the live stack with `perf_probe.py` (the brain was running the code from before migration 7 while
-this was written; run it after the next restart).
+## The live stack, as the owner (`perf_probe.py --only routes`, `probe-roles.json`)
+
+29 October 2026, after the restart that ran migrations 7 and 8 on `data\brain\brain.db`. p50 of 30 requests, against
+Phase 6's `probe-final.json`:
+
+| Route | Phase 6 | With roles |
+|---|---|---|
+| Mind map, showcase | 6.8 ms | 7.5 ms |
+| Mind map, 2,000 nodes | 243.6 ms | 251.8 ms |
+| Digest | 5.2 ms | 5.1 ms |
+| Workspace sync status | 21.1 ms | 27.4 ms (now also works out the caller's own counts) |
+| Tasks, Inbox, node, history | 2.3-2.7 ms | 2.7-3.3 ms |
+
+The live showcase notes with Gemma on the GPU, as the owner on the role-aware farm (`roles-showcase`): 3/3 filed in
+4.1 s, 1.7 s and 2.2 s.

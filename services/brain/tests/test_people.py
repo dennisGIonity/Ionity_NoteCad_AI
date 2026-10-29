@@ -240,3 +240,26 @@ def test_device_routes_need_a_device_token(people):
     assert snap["reset"] and not any(s in json.dumps(snap) for s in SECRET)
     pulled = c.get("/v1/device/pull", headers=h, params={"cursor": snap["cursor"]}).json()
     assert pulled["reset"] is False
+
+
+# ---------------------------------------------------------------- the showcase farm (step 6)
+def test_the_showcase_farm_has_its_people_and_a_restricted_branch():
+    """One owner, Marie managing the North Block, Sipho and Thandi as employees, Financials for owners only."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from farm import make_brain
+    from notecad_brain.permissions import View
+    from seed_farm_showcase import LocalBrain, build
+    b = make_brain()
+    build(LocalBrain(b), "showcase")
+    m = {r["display_name"]: r for r in b.graph.members("showcase")}
+    assert (m["Dennis"]["level"], m["Marie Venter"]["level"], m["Sipho Dlamini"]["level"], m["Thandi Nkosi"]["level"]) == (1, 2, 3, 3)
+    marie = load_principal(b.db, "showcase", m["Marie Venter"]["id"])
+    assert len(marie.scopes) == 1
+    fin = next(n for n in b.graph.nodes("showcase") if n["title"] == "Financials")
+    assert fin["eff_level"] == 1
+    for who in ("Sipho Dlamini", "Marie Venter"):
+        v = View(b.db, load_principal(b.db, "showcase", m[who]["id"]), "showcase")
+        assert "Financials" not in json.dumps(b.mindmap("showcase", view=v)["nodes"])
+    assert len([s for s in b.db.query("select * from seats where workspace_id='showcase' and status='available'")]) == 4

@@ -69,9 +69,19 @@ FARM = [
     ("Infrastructure", "category", [], {}, [("Fencing", "group", ["fence", "draad", "heining"], {}, [])]),
     ("Admin", "category", [], {}, [("Staff", "group", ["team", "personeel"], {}, [
         ("Sipho", "person", ["sipho dlamini", "voorman", "foreman"], {}, []),
+        ("Thandi", "person", ["thandi nkosi"], {}, []),
         ("Thabo", "person", ["thabo mokoena", "mechanic", "werktuigkundige"], {}, [])])]),
+    # ADR 0014: a branch only owners see
+    ("Financials", "category", ["finances", "finansies", "geld"], {}, [
+        ("Bank Loan", "topic", ["absa loan", "lening", "bank"], {}, []),
+        ("Payroll", "topic", ["wages", "salaries", "lone"], {}, [])]),
 ]
-MEMBERS = [("Sipho Dlamini", "Sipho"), ("Thabo Mokoena", "Thabo")]
+# (name, person node, role): Sipho and Thandi are employees, Thabo a person tasks are delegated to (no login)
+MEMBERS = [("Sipho Dlamini", "Sipho", "employee"), ("Thandi Nkosi", "Thandi", "employee"),
+           ("Thabo Mokoena", "Thabo", "employee")]
+MANAGER = ("Marie Venter", "North Block")  # a manager bound to one section (ADR 0014, decision 3)
+RESTRICTED = {"Financials": "owner"}
+SEATS = {"manager": 1, "employee": 3}  # free seats to invite into (the local ledger: added by hand)
 NOTES = [
     "Wheel needs changing on tractor model John Deere 9550 - number 1",
     "Today I planted field south 704 to 708",
@@ -143,7 +153,12 @@ class HttpBrain:
     def create(self, ws, name): return self._ok(self.c.post(f"{self.base}/workspaces", json={"name": name, "owner_name": "Dennis", "workspace_id": ws, "persona": "farmer"}))
     def add_node(self, ws, parent, title, kind, aliases): return self._ok(self.c.post(f"{self.base}/workspaces/{ws}/nodes", json={"parent_id": parent, "title": title, "kind": kind, "aliases": aliases}))["id"]
     def set_attrs(self, nid, attrs): self._ok(self.c.patch(f"{self.base}/nodes/{nid}", json={"attributes": attrs}))
-    def add_member(self, ws, name, person): self._ok(self.c.post(f"{self.base}/workspaces/{ws}/members", json={"display_name": name, "person_node_id": person}))
+    def add_member(self, ws, name, person, role="employee"):
+        return self._ok(self.c.post(f"{self.base}/workspaces/{ws}/members",
+                                    json={"display_name": name, "person_node_id": person, "role": role}))["id"]
+    def set_scope(self, member, nodes): self._ok(self.c.patch(f"{self.base}/members/{member}", json={"scope_node_ids": nodes}))
+    def restrict(self, nid, vis): self._ok(self.c.post(f"{self.base}/nodes/{nid}/visibility", json={"visibility": vis}))
+    def add_seats(self, ws, role, n): self._ok(self.c.post(f"{self.base}/workspaces/{ws}/seats", json={"role": role, "count": n}))
     def mindmap(self, ws): return self._ok(self.c.get(f"{self.base}/workspaces/{ws}/mindmap"))
     def export(self, ws): return self._ok(self.c.get(f"{self.base}/workspaces/{ws}/export"))
     def delete(self, ws): return self._ok(self.c.delete(f"{self.base}/workspaces/{ws}", params={"confirm": ws}))
@@ -168,7 +183,17 @@ class LocalBrain:
     def create(self, ws, name): return self.b.graph.create_workspace(name, persona="farmer", owner_name="Dennis", workspace_id=ws)
     def add_node(self, ws, parent, title, kind, aliases): return self.b.graph.add_node(ws, parent, title, kind, aliases=aliases)
     def set_attrs(self, nid, attrs): self.b.set_attributes(nid, attrs)
-    def add_member(self, ws, name, person): self.b.graph.add_member(ws, name, person_node_id=person)
+    def add_member(self, ws, name, person, role="employee"): return self.b.graph.add_member(ws, name, role=role, person_node_id=person)
+
+    def set_scope(self, member, nodes):
+        m = self.b.db.one("select workspace_id from members where id=?", (member,))
+        self.b.people._set_scopes(m["workspace_id"], member, nodes)
+
+    def restrict(self, nid, vis): self.b.graph.set_visibility(nid, vis, 1)
+
+    def add_seats(self, ws, role, n):
+        from notecad_brain.permissions import owner_principal
+        self.b.people.add_seats(owner_principal(self.b.db, ws), ws, role, n)
     def mindmap(self, ws): return self.b.mindmap(ws)
     def export(self, ws): return self.b.export_workspace(ws)
     def delete(self, ws): return self.b.delete_workspace(ws)
@@ -184,19 +209,28 @@ def build(api, ws: str = SHOWCASE_ID, name: str = "Wabakipi Farm") -> int:
     people: dict[str, str] = {}
     count = 0
 
+    titles: dict[str, str] = {}
+
     def add(parent, items):
         nonlocal count
         for title, kind, aliases, attrs, kids in items:
             nid = api.add_node(ws, parent, title, kind, aliases)
             count += 1
+            titles.setdefault(title, nid)
             if attrs:
                 api.set_attrs(nid, attrs)
             if kind == "person":
                 people[title] = nid
             add(nid, kids)
     add(root, FARM)
-    for full, short in MEMBERS:
-        api.add_member(ws, full, people[short])
+    for full, short, role in MEMBERS:
+        api.add_member(ws, full, people[short], role)
+    manager = api.add_member(ws, MANAGER[0], None, "manager")
+    api.set_scope(manager, [titles[MANAGER[1]]])
+    for title, vis in RESTRICTED.items():
+        api.restrict(titles[title], vis)
+    for role, n in SEATS.items():
+        api.add_seats(ws, role, n)
     return count
 
 
@@ -283,7 +317,7 @@ def main() -> int:
 
     if not api.exists(a.id):
         n = build(api, a.id, a.name)
-        print(f"{C.G}built{C.X} '{a.id}' ({a.name}): {n} nodes, members {', '.join(f for f, _ in MEMBERS)}")
+        print(f"{C.G}built{C.X} '{a.id}' ({a.name}): {n} nodes, members {', '.join(f for f, *_ in MEMBERS)}")
     elif not (a.check or a.remove_stale or a.list):
         print(f"'{a.id}' already exists (use --reset-clean for a fresh one)")
 

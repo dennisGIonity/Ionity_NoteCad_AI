@@ -67,7 +67,7 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
 
 <div class="wrap">
 <header>
-  <div class="eyebrow">Ionity NoteCad · Phase 6 · 28 October 2026</div>
+  <div class="eyebrow">Ionity NoteCad · Phase 6 · roles, seats and permission-aware sync · 29 October 2026</div>
   <h1>From a voice note to the right branch</h1>
   <p class="lede">How one spoken note travels from the desktop recorder through the NoteCad brain, splits into events, finds its place in the owner's own map, and turns into notes, tasks and alerts that go to the right person, while the mind map lights up the nodes it changed. Every box below is running code on WABAKIPI: <code>apps/desktop</code>, <code>services/brain</code> and <code>services/companion</code>, with Gemma 4 and Whisper on the RTX 4060.</p>
 </header>
@@ -290,7 +290,7 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
   <p>Apply writes every action in one transaction and stores an inverse for each, so Undo reverses the whole note. Tasks are delegated by name; alerts climb the tree.</p>
   <figure>
     <div class="scroll">
-    <svg viewBox="0 0 1140 600" role="img" aria-label="Apply fans out into branch, note, task, alert, link and attribute writes. Tasks go through the delegation resolver to a member or back to the owner. Alerts set status, mirror through channels to the parent and echo up the ancestors, and critical alerts notify owners and editors. Everything is logged for undo, published live and handed to the companion.">
+    <svg viewBox="0 0 1140 600" role="img" aria-label="Apply fans out into branch, note, task, alert, link and attribute writes. Tasks go through the delegation resolver to a member or back to the owner. Alerts set status, mirror through channels to the parent and echo up the ancestors, and critical alerts notify the owners and managers who can see that branch. Everything is logged for undo, published live and handed to the companion.">
       <defs>
         <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
         <marker id="bp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--purple)"/></marker>
@@ -488,5 +488,53 @@ footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--lin
   </div>
 </section>
 
-<footer>Ionity NoteCad · Ionity Global (Pty) Ltd · AEDI · Policy 986 AED · License AED 900 · (c) 2026 Ionity Global (Pty) Ltd. Author: Dennis Grobler. Code: <code>apps/desktop</code>, <code>services/brain</code>, <code>services/companion</code>, <code>services/start_notecad.ps1</code>, schema <code>packages/schema/actions.schema.json</code>, fold logic <code>packages/core/src/fold.ts</code>, Supabase <code>supabase/migrations/0001</code>–<code>0006</code>. Decisions: ADR 0007–0013.</footer>
+<section>
+  <h2>6 · Who sees and does what (ADR 0014)</h2>
+  <p>One business, one map, many people. Each request is made <em>as</em> someone, worked out from its credential alone: a phone's own token, the shared token (the first owner, for one more release), or this PC. Reads go through that person's <strong>view</strong>; every write goes through the Applier, which judges each action against the permission matrix after validation, so no model can talk its way past it.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1140 470" role="img" aria-label="A request carries a credential: a device token, the shared token or this PC. The brain turns it into a principal with a level (owner, manager, employee) and branches. Reads pass through the person's view: restricted branches are left out of the map, digest, search, prompts, export, live events and the phone's copy, and roll-ups are worked out again from what they see. Writes pass through the Applier's judge: allowed actions are written; changes an employee may not make become an Inbox proposal for a manager or an owner; deletes and anything on a branch they cannot see are refused and logged. Another worker's changes are checked again against the author's current role when they arrive; a refused one goes back with the hub's row. A phone keeps a copy of what its member may see: tombstones take out a branch that became restricted, and a reset starts over when they may see more.">
+      <defs>
+        <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="rp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--purple)"/></marker>
+      </defs>
+      <text class="lane" x="20" y="24">WHO IS ASKING</text>
+      <rect class="svg-box" x="20" y="38" width="210" height="44" rx="8"/><text class="t-h" x="34" y="58">Phone · device token</text><text class="t-m" x="34" y="74">nct_…, kept as a hash</text>
+      <rect class="svg-box" x="20" y="92" width="210" height="44" rx="8"/><text class="t-h" x="34" y="112">Shared token</text><text class="t-m" x="34" y="128">first owner · other brains</text>
+      <rect class="svg-box" x="20" y="146" width="210" height="44" rx="8"/><text class="t-h" x="34" y="166">This PC</text><text class="t-m" x="34" y="182">first owner (or LOCAL_MEMBER)</text>
+      <rect class="svg-hot" x="290" y="86" width="210" height="56" rx="8"/><text class="t-h" x="304" y="108">Principal</text><text class="t-s" x="304" y="126">owner 1 · manager 2 · employee 3</text>
+      <path class="edge" d="M230 60 C260 60 260 104 286 104" marker-end="url(#r)"/>
+      <path class="edge" d="M230 114 H286" marker-end="url(#r)"/>
+      <path class="edge" d="M230 168 C260 168 260 124 286 124" marker-end="url(#r)"/>
+
+      <text class="lane" x="560" y="24">READS: THEIR VIEW</text>
+      <rect class="svg-ok" x="560" y="38" width="560" height="104" rx="8"/>
+      <text class="t-h" x="576" y="62">Map · digest · search and model prompts · history · export · live events · audio</text>
+      <text class="t-s" x="576" y="82">a branch's level is inherited down the tree (eff_level); a capture takes the strictest node it touched</text>
+      <text class="t-s" x="576" y="100">roll-ups and echo dots are worked out again from what they see: Financials leaves no trace on the root</text>
+      <text class="t-s" x="576" y="118">an employee bound to a branch sees it and the bare path to it (stubs); invisible means "not found"</text>
+      <path class="edge-p" d="M500 104 H556" marker-end="url(#rp)"/>
+
+      <text class="lane" x="20" y="232">WRITES: THE APPLIER JUDGES EACH ACTION</text>
+      <rect class="svg-hot" x="20" y="246" width="250" height="60" rx="8"/><text class="t-h" x="36" y="270">Validated actions</text><text class="t-s" x="36" y="288">from a note, an app edit, an approval</text>
+      <rect class="svg-ok" x="330" y="246" width="240" height="60" rx="8"/><text class="t-h" x="346" y="270">Allowed: written</text><text class="t-s" x="346" y="288">an employee's note, task, progress</text>
+      <rect class="svg-warn" x="330" y="316" width="240" height="60" rx="8"/><text class="t-h" x="346" y="340">Proposal: the Inbox</text><text class="t-s" x="346" y="358">a rename, clearing a problem, …</text>
+      <rect class="svg-crit" x="330" y="386" width="240" height="60" rx="8"/><text class="t-h" x="346" y="410">Refused, and logged</text><text class="t-s" x="346" y="428">a delete, a hidden branch</text>
+      <path class="edge" d="M270 268 H326" marker-end="url(#r)"/>
+      <path class="edge" d="M270 284 C300 284 300 346 326 346" marker-end="url(#r)"/>
+      <path class="edge" d="M270 296 C290 296 290 416 326 416" marker-end="url(#r)"/>
+      <rect class="svg-box" x="630" y="316" width="240" height="60" rx="8"/><text class="t-h" x="646" y="340">Manager or owner approves</text><text class="t-s" x="646" y="358">writer and approver both logged</text>
+      <path class="edge" d="M570 346 H626" marker-end="url(#r)"/>
+
+      <text class="lane" x="900" y="232">SYNC AND DEVICES</text>
+      <rect class="svg-box" x="900" y="246" width="220" height="60" rx="8"/><text class="t-h" x="914" y="268">Receiving worker checks</text><text class="t-s" x="914" y="286">the author's current role;</text><text class="t-s" x="914" y="300">refused: the hub's row goes back</text>
+      <rect class="svg-box" x="900" y="316" width="220" height="60" rx="8"/><text class="t-h" x="914" y="338">Concurrent edits</text><text class="t-s" x="914" y="356">the higher role wins; the other is kept</text>
+      <rect class="svg-box" x="900" y="386" width="220" height="60" rx="8"/><text class="t-h" x="914" y="408">The phone's copy</text><text class="t-s" x="914" y="426">tombstones · reset · revoked: wipe</text>
+    </svg>
+    </div>
+    <figcaption>Seats come from a local ledger (no billing provider yet). Invites are one-time codes in a QR; joining gives that phone its own token, shown once. Spoken admin commands ("Restrict Financials to owner only", "Make Johan a manager") come from a fixed grammar, never a model: tightening applies at once, loosening and role changes come back as a one-tap confirm.</figcaption>
+  </figure>
+</section>
+
+<footer>Ionity NoteCad · Ionity Global (Pty) Ltd · AEDI · Policy 986 AED · License AED 900 · (c) 2026 Ionity Global (Pty) Ltd. Author: Dennis Grobler. Code: <code>apps/desktop</code>, <code>services/brain</code>, <code>services/companion</code>, <code>services/start_notecad.ps1</code>, schema <code>packages/schema/actions.schema.json</code>, fold logic <code>packages/core/src/fold.ts</code>, Supabase <code>supabase/migrations/0001</code>–<code>0008</code>. Roles: <code>services/brain/notecad_brain/permissions.py</code>. Decisions: ADR 0007–0014.</footer>
 </div>

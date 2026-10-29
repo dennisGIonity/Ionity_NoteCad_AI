@@ -9,6 +9,36 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## Roles, seats and permission-aware sync (ADR 0014, 29 October 2026)
+
+One business, one map, many people: owner (1), manager (2), employee (3), and the system (0). Restricted branches
+(visibility all / manager / owner) inherit down the tree; every read goes through the caller's view, every write is
+judged by the Applier after validation, and sync checks each change against its author's current role.
+
+| Step | What | Commit |
+|---|---|---|
+| 1 | ADR 0014, the owner's three answers recorded (editors without a login become employees; a revoked phone hands in its last recordings once, as quarantined proposals, then wipes; the shared token acts as the first owner for one release) | af6ac7c |
+| 2 | Backups (`data\archive\roles-*`); migrations 7 and 8 on SQLite and Supabase (0007 frozen by hash, 0008 and the RLS generated from `permissions.py` by `tools\gen_rls_migration.py`, `--check` in CI) | 0ba0e6d |
+| 3 | `permissions.py` (matrix, `decide`, Principal, View); every write judged (allowed / Inbox proposal / refused and logged), every read filtered (map, digest, search, prompts, history, export, events, audio); sync checked on arrival, rank conflicts kept | 8fb5c85, be97313 |
+| 4 | Seats (local ledger, no billing provider), one-time invites in a QR, joining, per-device `nct_` tokens (hashed), 410 + wipe on revoke, the phone's own copy with tombstones and reset | 081d8e7, 96e1873 |
+| 5 | People & seats panel, Inbox proposals, lock badges, role-aware controls (desktop and phone), voice admin commands in English and Afrikaans | 4b58e72 |
+| 6-7 | Showcase seed with roles, the joining-employee e2e, live numbers, these docs | this commit |
+
+**Verified.** CI on Postgres 17 and SQLite: brain 253, companion 47, Android 13 (the native wipe included), phone 7,
+desktop 37 (role gating in Vitest). Live on WABAKIPI after migrations 7 and 8 ran on `data\brain\brain.db`: the
+three showcase notes 3/3 (4.1, 1.7, 2.2 s) on `roles-showcase`; Playwright `roles.spec.ts` (an employee joins from a
+second browser context and never sees Financials, on the map, in the API or in what the app was sent; revoking stops
+the device with 410) and every other suite pass. Numbers in `docs\perf\roles.md`: an employee's map +12.9 % of the
+owner's, a 349-node visibility change 14.8 ms, the live 2,000-node map 243.6 → 251.8 ms.
+
+**Open**
+
+- The phone token is kept in app storage; Android Keystore encryption (ADR 0014, decision 19) is not built yet.
+- The Android unit test covers the native wipe; tombstones in the phone's copy are tested in the web layer (Vitest).
+- With a Supabase target, the role re-check runs in the pushing worker (RLS guards the rows, not the author's rank).
+- The live `showcase` workspace was left as it was (resetting it deletes data): the role-aware farm is
+  `roles-showcase` (`seed_farm_showcase.py --reset-clean --id roles-showcase`; e2e with `NC_E2E_WS=roles-showcase`).
+
 ## Phase 6 follow-up: the open items (29 October 2026)
 
 What Phase 6 left open because WABAKIPI cannot do it (no Postgres, no Rust or Android SDK, nothing on C:, Smart
