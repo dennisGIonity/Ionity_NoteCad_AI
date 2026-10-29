@@ -1,0 +1,82 @@
+{
+  "dataset": "google/fleurs af_za test",
+  "clips": 120,
+  "model": "large-v3-turbo",
+  "keyterms": 33,
+  "results": {
+    "app (detect, English prompt)": {
+      "wer_pct": 35.5,
+      "detected": {
+        "af": 109,
+        "en": 6,
+        "is": 4,
+        "nl": 1
+      },
+      "s_per_clip_p50": 0.709
+    },
+    "detect, no prompt": {
+      "wer_pct": 36.3,
+      "detected": {
+        "af": 109,
+        "en": 6,
+        "is": 4,
+        "nl": 1
+      },
+      "s_per_clip_p50": 0.681
+    },
+    "detect, nl->af, English prompt": {
+      "wer_pct": 35.3,
+      "detected": {
+        "af": 109,
+        "en": 6,
+        "is": 4,
+        "nl": 1
+      },
+      "s_per_clip_p50": 0.692
+    },
+    "detect af or en, English prompt": {
+      "wer_pct": 35.0,
+      "detected": {
+        "af": 109,
+        "en": 11
+      },
+      "s_per_clip_p50": 0.738
+    },
+    "af, English prompt": {
+      "wer_pct": 34.4,
+      "detected": {
+        "af": 120
+      },
+      "s_per_clip_p50": 0.451
+    },
+    "af, no prompt": {
+      "wer_pct": 33.6,
+      "detected": {
+        "af": 120
+      },
+      "s_per_clip_p50": 0.444
+    },
+    "af, Afrikaans prompt": {
+      "wer_pct": 33.9,
+      "detected": {
+        "af": 120
+      },
+      "s_per_clip_p50": 0.458
+    },
+    "af, Afrikaans prompt, int8_float16": {
+      "wer_pct": 34.3,
+      "detected": {
+        "af": 120
+      },
+      "s_per_clip_p50": 0.432
+    },
+    "af, Afrikaans prompt, beam 1": {
+      "wer_pct": 34.9,
+      "detected": {
+        "af": 120
+      },
+      "s_per_clip_p50": 0.404
+    }
+  },
+  "note": "RTX 4060, float16 unless named; WER on FLEURS' normalised text. 'detect af or en' is the brain's behaviour from NC_BRAIN_STT_LANGUAGES=en,af (default)."
+}

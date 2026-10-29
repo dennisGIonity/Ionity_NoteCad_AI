@@ -300,6 +300,26 @@ def test_whisper_falls_back_to_cpu_when_cuda_libraries_are_missing(monkeypatch):
     assert calls == ["auto", "cpu"] and w.compute_type == "int8" and t.text == "field south 704"
 
 
+def test_whisper_only_picks_the_owners_languages():
+    # FLEURS: Afrikaans with no hint came out as Icelandic or Dutch; that text then reached the router as gibberish
+    from notecad_brain.stt import WhisperSTT
+    w = WhisperSTT("tiny", languages=["en", "af"])
+
+    class Model:
+        def __init__(self, probs):
+            self.probs = probs
+
+        def detect_language(self, samples, vad_filter=False):
+            if self.probs is None:
+                raise RuntimeError("no speech")
+            return self.probs[0][0], self.probs[0][1], self.probs
+    assert w._pick_language(Model([("is", 0.5), ("af", 0.3), ("nl", 0.15), ("en", 0.05)]), None) == "af"
+    assert w._pick_language(Model([("en", 0.9), ("af", 0.1)]), None) == "en"
+    assert w._pick_language(Model([("is", 1.0)]), None) is None      # neither: Whisper decides
+    assert w._pick_language(Model(None), None) is None               # silence: Whisper decides
+    assert WhisperSTT("tiny", languages=[""]).languages == []        # NC_BRAIN_STT_LANGUAGES= turns it off
+
+
 def test_stt_is_warmed_at_startup(tmp_path):
     warmed = threading.Event()
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -96,11 +96,14 @@ class WhisperSTT:
     name = "faster-whisper"
 
     def __init__(self, model: str = "large-v3-turbo", device: str = "auto", compute_type: str = "auto",
-                 download_root: str | None = None):
+                 download_root: str | None = None, languages: list[str] | None = None):
         self.model_name = model
         self.device = device
         self.compute_type = compute_type
         self.download_root = download_root  # keep the model with the project, not in the user profile
+        # FLEURS af_za, no hint: 11 of 120 Afrikaans clips came out as English, Icelandic or Dutch
+        # (docs/perf/afrikaans-wer.json); the owner's own languages are the only choices
+        self.languages = [x for x in (languages or []) if x]
         self._model = None
 
     def _load(self):
@@ -130,8 +133,24 @@ class WhisperSTT:
 
     def _run(self, audio: bytes, lang: str | None, prompt: str | None):
         import io
-        segments, info = self._load().transcribe(io.BytesIO(audio), language=lang, vad_filter=True, initial_prompt=prompt)
+        model = self._load()
+        source: Any = io.BytesIO(audio)
+        if lang is None and len(self.languages) > 1:
+            from faster_whisper import decode_audio
+            source = decode_audio(source)  # decoded once, for the language pick and the transcript
+            lang = self._pick_language(model, source)
+        elif lang is None and self.languages:
+            lang = self.languages[0]
+        segments, info = model.transcribe(source, language=lang, vad_filter=True, initial_prompt=prompt)
         return list(segments), info
+
+    def _pick_language(self, model, samples) -> str | None:
+        try:
+            _, _, probs = model.detect_language(samples, vad_filter=True)
+        except (RuntimeError, ValueError, IndexError):  # no speech found: let transcribe decide
+            return None
+        mine = [p for p in probs if p[0] in self.languages]
+        return max(mine, key=lambda p: p[1])[0] if mine else None
 
     def transcribe(self, audio, *, mime, lang_hint, keyterms):
         lang = (lang_hint or "").split("-")[0] or None
@@ -197,7 +216,8 @@ def make_stt(settings) -> STT | None:
             import importlib.util
             if importlib.util.find_spec("faster_whisper") is not None:
                 engines.append(WhisperSTT(settings.whisper_model, device=settings.whisper_device,
-                                          compute_type=settings.whisper_compute, download_root=settings.whisper_dir))
+                                          compute_type=settings.whisper_compute, download_root=settings.whisper_dir,
+                                          languages=[x.strip() for x in settings.stt_languages.split(",")]))
     if not engines:
         return None
     return engines[0] if len(engines) == 1 else ChainSTT(engines)

@@ -38,6 +38,8 @@ class Settings:
     whisper_model: str = field(default_factory=lambda: _env("WHISPER_MODEL", "large-v3-turbo"))
     whisper_device: str = field(default_factory=lambda: _env("WHISPER_DEVICE", "auto"))  # auto | cuda | cpu
     whisper_compute: str = field(default_factory=lambda: _env("WHISPER_COMPUTE", "auto"))  # auto | float16 | int8
+    # the languages the owner speaks: with no hint on a note, Whisper picks the likeliest of these (empty: any)
+    stt_languages: str = field(default_factory=lambda: _env("STT_LANGUAGES", "en,af"))
     whisper_dir: str = field(default_factory=lambda: _env(
         "WHISPER_DIR", str(Path(__file__).resolve().parents[3] / "models" / "whisper")))
     companion_url: str | None = field(default_factory=lambda: _env("COMPANION_URL"))
