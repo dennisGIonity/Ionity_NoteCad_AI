@@ -122,7 +122,10 @@ jobs:
           for f in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
               for case in E.parse(f).getroot().iter("testcase"):
                   for bad in list(case.iter("failure")) + list(case.iter("error")):
-                      text = " | ".join((bad.get("message") or bad.text or "").strip().splitlines()[:4])
+                      trace = (bad.text or "").splitlines()
+                      causes = [ln.strip() for i, ln in enumerate(trace)
+                                if ln.startswith("Caused by") or (i > 0 and trace[i - 1].startswith("Caused by"))]
+                      text = " | ".join([(bad.get("message") or "").strip()] + trace[1:3] + causes[-6:])
                       print(f"::error title={case.get('classname', '').split('.')[-1]}.{case.get('name')}::{text[:900]}")
           PY
             exit "$code"
