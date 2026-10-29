@@ -59,7 +59,7 @@ def test_migration_7_maps_the_phase_1_roles(tmp_path):
     assert {"visibility", "vis_set_by", "eff_level", "rollup_tiers"} <= {r["name"] for r in db.query("pragma table_info(nodes)")}
     tables = {r["name"] for r in db.query("select name from sqlite_master where type='table'")}
     assert {"member_scopes", "seats", "invites", "devices"} <= tables
-    assert db.one("select max(version) as v from schema_migrations")["v"] == 7
+    assert db.one("select max(version) as v from schema_migrations")["v"] == MIGRATIONS[-1][0]
     db.close()
 
 
@@ -224,7 +224,7 @@ def test_member_role_names():
             P.member_role(bad)
 
 
-# ---------------------------------------------------------------- Supabase 0007
+# ---------------------------------------------------------------- Supabase 0007 (shipped) and 0008
 def _gen():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
     import gen_rls_migration
@@ -232,11 +232,15 @@ def _gen():
 
 
 def test_supabase_0007_is_generated_from_the_brain():
+    """0007 has shipped (checked by its hash); the row-level security as it is now is 0008, written from the brain."""
     g = _gen()
+    assert g.frozen_ok() == [], "a shipped migration was edited: add the next number instead"
+    shipped = (g.DIR / "0007_roles_seats_permissions.sql").read_text(encoding="utf-8")
+    for t in g.new_tables():
+        assert f"create trigger nc_sync_{t} " in shipped
     text = g.render()
     assert g.OUT.read_text(encoding="utf-8") == text, "run tools/gen_rls_migration.py"
-    for t in g.new_tables():
-        assert f"create trigger nc_sync_{t} " in text
+    assert "strpos(coalesce(route_member_ids, ''), nc_member(workspace_id))" in text  # no recipients: owners only
     assert set(TABLES) <= set(P.RLS_TABLES), "every synced table needs its row-level security"
     for t, spec in P.RLS_TABLES.items():
         assert f"alter table {t} enable row level security;" in text

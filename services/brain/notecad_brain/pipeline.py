@@ -164,6 +164,10 @@ class Brain:
         from .sync import Journal, SyncEngine
         self.journal = Journal(self.db, worker_id=self.settings.worker_id)
         self.journal.baseline()
+        from .devicesync import DeviceSync
+        from .people import People
+        self.people = People(self)  # seats, invites, joining, roles, devices (ADR 0014)
+        self.devices = DeviceSync(self)  # a member's device copy: snapshot, pull, tombstones
         self.sync = SyncEngine(self, self.settings.sync_target, token=self.settings.sync_token,
                                interval=self.settings.sync_interval,
                                workspaces=[w.strip() for w in (self.settings.sync_workspaces or "").split(",") if w.strip()])
@@ -420,7 +424,10 @@ class Brain:
         return [p for p in (load_principal(self.db, ws, r["id"]) for r in rows) if p]
 
     def _place_route(self, ws: str, author: Principal) -> list[str]:
-        """Who may place a held note: its author, the owners, and for anyone below owner the managers too."""
+        """Who may place a held note: its author, the owners, and for anyone below owner the managers too. A revoked
+        member's: the owners alone (ADR 0014, question 2)."""
+        if not author.active:
+            return [p.member_id for p in self._members(ws, OWNER) if p.member_id]
         others = [p.member_id for p in self._members(ws, OWNER if author.level <= OWNER else MANAGER)]
         return [m for m in dict.fromkeys(([author.member_id] if author.member_id else []) + others) if m]
 
@@ -428,6 +435,8 @@ class Brain:
         """The managers whose branches cover every held action and who may do it themselves; else the owners. An
         owner's own CONFIRM (a delete) goes back to them."""
         made = {a["temp_id"] for a in held if a.get("type") == "create_node"}
+        if not author.active:  # a revoked member's last notes: for an owner to look at (ADR 0014, question 2)
+            return self._members(ws, OWNER)
 
         def can(p: Principal) -> bool:
             v = View(self.db, p, ws)

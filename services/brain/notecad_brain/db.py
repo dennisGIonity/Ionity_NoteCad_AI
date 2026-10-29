@@ -177,6 +177,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "create unique index if not exists devices_token on devices(token_hash)",
         "create index if not exists devices_member on devices(member_id)",
     ]),
+    # ADR 0014 step 4: what the joining, the device copy and the Inbox routing look up (Supabase 0008 also corrects
+    # the Inbox policy of 0007)
+    (8, "invites, devices and Inbox lookups", [
+        "create index if not exists inbox_ws_kind on inbox(workspace_id, state, kind)",
+        "create index if not exists invites_ws on invites(workspace_id, created_at)",
+        "create index if not exists devices_ws on devices(workspace_id, member_id)",
+        "create index if not exists seats_member on seats(assigned_member_id)",
+    ]),
 ]
 
 _ADD_COLUMN = re.compile(r"alter table (\w+) add column if not exists (\w+) (.+)", re.S)

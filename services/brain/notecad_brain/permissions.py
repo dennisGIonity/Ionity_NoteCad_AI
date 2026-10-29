@@ -550,11 +550,11 @@ RLS_TABLES: dict[str, Table] = {
     "profile_facts": Table("nc_level(workspace_id) <= case visibility when 'owner' then 1 when 'manager' then 2 "
                            "else 3 end",
                            {"insert": "profile_fact", "update": "profile_fact", "delete": "profile_fact"}),
+    # 0008: an item with no recipients (an owner's held note from before ADR 0014) is the owners' alone
     "inbox": Table("author_member_id = nc_member(workspace_id) or nc_level(workspace_id) = 1 or "
-                   "(nc_level(workspace_id) = 2 and (route_member_ids is null or "
-                   "strpos(route_member_ids, nc_member(workspace_id)) > 0))",
+                   "(nc_level(workspace_id) = 2 and strpos(coalesce(route_member_ids, ''), nc_member(workspace_id)) > 0)",
                    {"update": "approve"},
-                   scope="(route_member_ids is null or strpos(route_member_ids, nc_member(workspace_id)) > 0)"),
+                   scope="strpos(coalesce(route_member_ids, ''), nc_member(workspace_id)) > 0"),
     "action_log": Table("case nc_level(workspace_id) when 1 then true "
                         "when 2 then member_id = nc_member(workspace_id) or (node_id is not null "
                         "and nc_sees_rows(node_id) and nc_in_scope(node_id)) "

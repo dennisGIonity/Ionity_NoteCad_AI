@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import re
 import threading
 from contextlib import asynccontextmanager
 import time
@@ -27,6 +28,7 @@ from .config import Settings
 from .graph import GraphError
 from .permissions import (ALLOW, OWNER, ROLES, Principal, View, capabilities, load_principal,
                           owner_principal)
+from .people import handin_ok
 from .pipeline import AUDIO_EXT, Brain, CaptureConflict
 
 log = logging.getLogger("notecad.brain")
@@ -121,6 +123,31 @@ class AskIn(BaseModel):
     context_node_id: str | None = Field(default=None, max_length=64)
 
 
+class SeatsIn(BaseModel):
+    role: str = Field(pattern="^(manager|employee)$")
+    count: int = Field(default=1, ge=1, le=100)
+
+
+class InviteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    role: str = Field(default="employee", pattern="^(manager|employee)$")
+    contact: str | None = Field(default=None, max_length=120)
+    person_node_id: str | None = Field(default=None, max_length=64)
+    scope_node_ids: list[str] = Field(default=[], max_length=20)
+    hours: int = Field(default=72, ge=1, le=168)
+
+
+class JoinIn(BaseModel):
+    code: str = Field(min_length=6, max_length=64)
+    device_name: str = Field(default="Phone", max_length=60)
+    platform: str | None = Field(default=None, max_length=20)
+
+
+class RoleIn(BaseModel):
+    role: str | None = Field(default=None, pattern="^(owner|manager|employee)$")
+    scope_node_ids: list[str] | None = Field(default=None, max_length=20)
+
+
 class TaskPatch(BaseModel):
     state: str | None = Field(default=None, pattern="^(open|done|cancelled)$")
     assignee_member: str | None = None
@@ -203,6 +230,8 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     allowed_origins = set(origins)
 
     DEVICE = "nct_"  # a per-device token (ADR 0014); the brain keeps only its SHA-256
+    HANDIN = re.compile(r"^(/api)?/v1/(workspaces/[^/]+/(capture|uploads)(/[^/]+)?|device/wiped)$")
+    joins: dict[str, list[float]] = {}  # client address -> recent join attempts (at most 10 a minute)
     REVOKED = {"code": "revoked", "wipe": True, "detail": "this device was removed from the business: its copy is wiped"}
 
     def bearer(request: Request) -> str | None:
@@ -230,7 +259,10 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
             raise HTTPException(401, "missing or wrong token")
         m = brain.db.one("select status from members where id=?", (d["member_id"],))
         if d["revoked_at"] or m is None or m["status"] != "active":
-            raise HTTPException(410, REVOKED)
+            # a revoked phone may still hand in what it recorded before (held for an owner) and say it has wiped
+            if not HANDIN.match(request.url.path) or request.method not in ("POST", "PATCH", "HEAD"):
+                raise HTTPException(410, REVOKED)
+            request.state.revoked_at = d["revoked_at"] or now_iso()
         now = now_iso()
         if (d.get("last_seen_at") or "")[:16] != now[:16]:  # at most once a minute
             brain.db.update("devices", {"id": d["id"]}, {"last_seen_at": now})
@@ -282,7 +314,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
             if d["workspace_id"] != ws:
                 raise HTTPException(404, "no such workspace")
             p = load_principal(brain.db, ws, d["member_id"], d["id"])
-            if p is None or not p.active:
+            if p is None or (not p.active and getattr(request.state, "revoked_at", None) is None):
                 raise HTTPException(410, REVOKED)
         elif token_ok(request):
             if not settings.legacy_token_owner:
@@ -666,6 +698,9 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                 raise HTTPException(415, f"unsupported audio type {mime or '?'}: use WAV, WebM, Opus/Ogg, MP3 or M4A")
         elif not text:
             raise HTTPException(422, "send text or an audio file")
+        rev = getattr(request.state, "revoked_at", None)
+        if rev is not None and not handin_ok(rev, body.recorded_at):
+            raise HTTPException(410, REVOKED)  # recorded after the revoke, or handed in too late
         wait = body.wait if body.wait is not None else audio is None
         reg = await run_in_threadpool(guard, brain.register_capture, ws, text=None if audio is not None else text,
                                       audio=audio, mime=mime, capture_id=body.capture_id, recorded_at=body.recorded_at,
@@ -821,14 +856,9 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     tr = tus.router(brain, settings, check_auth, ws_ok, who)
     r.include_router(tr)
 
-    @r.get("/v1/pairing")
-    def pairing(request: Request, ws: str | None = None):
-        """For the desktop app only: what a phone needs to connect (shown as a QR code to scan with the phone)."""
-        if not is_local(request) or not local_host(request):  # this PC, by its own name (no rebound domain)
-            raise HTTPException(403, "pairing is only shown on this PC")
+    # ---------------------------------------------------------------- people: seats, invites, joining, devices
+    def lan_urls(port: int) -> list[str]:
         import socket
-        from urllib.parse import urlencode
-        port = request.url.port or 8788
         ips: list[str] = []
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -844,8 +874,129 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                     ips.append(ip)
         except OSError:
             pass
+        return [f"http://{ip}:{port}" for ip in ips]
+
+    def brain_urls(request: Request) -> list[str]:
+        """Where a phone reaches this brain: this PC's LAN addresses when asked here, else the address that was used."""
+        if is_local(request) and local_host(request):
+            return lan_urls(request.url.port or 8788) or [str(request.base_url).rstrip("/")]
+        return [str(request.base_url).rstrip("/")]
+
+    def throttle(request: Request) -> None:
+        """The join routes need no token: at most 10 tries a minute from one address."""
+        ip = request.client.host if request.client else "?"
+        now = time.monotonic()
+        recent = [t for t in joins.get(ip, []) if now - t < 60]
+        if len(recent) >= 10:
+            raise HTTPException(429, "too many tries: wait a minute")
+        joins[ip] = recent + [now]
+
+    @r.get("/v1/workspaces/{ws}/seats", dependencies=A)
+    def seats(ws: str, request: Request):
+        return brain.people.seats(who(request, ws_ok(ws)), ws)
+
+    @r.post("/v1/workspaces/{ws}/seats", dependencies=A)
+    def add_seats(ws: str, body: SeatsIn, request: Request):
+        """An owner adds seats by hand (the local ledger: no billing provider yet)."""
+        return {"seats": guard(brain.people.add_seats, who(request, ws_ok(ws)), ws, body.role, body.count)}
+
+    @r.post("/v1/seats/{seat_id}/remove", dependencies=A)
+    def remove_seat(seat_id: str, request: Request):
+        return guard(brain.people.remove_seat, who(request, ws_of("seats", seat_id)), seat_id)
+
+    @r.get("/v1/workspaces/{ws}/invites", dependencies=A)
+    def invites(ws: str, request: Request):
+        return brain.people.invites(who(request, ws_ok(ws)), ws)
+
+    @r.post("/v1/workspaces/{ws}/invites", dependencies=A)
+    def invite(ws: str, body: InviteIn, request: Request):
+        """A one-time code for a free seat, with the person's profile. The code and the join links are in this answer
+        only (the brain keeps a hash): show them as a QR now."""
+        p = who(request, ws_ok(ws))
+        return guard(brain.people.invite, p, ws, name=body.name, role=body.role, contact=body.contact,
+                     person_node_id=body.person_node_id, scope_node_ids=body.scope_node_ids, hours=body.hours,
+                     base_urls=brain_urls(request))
+
+    @r.post("/v1/invites/{invite_id}/revoke", dependencies=A)
+    def revoke_invite(invite_id: str, request: Request):
+        return guard(brain.people.revoke_invite, who(request, ws_of("invites", invite_id)), invite_id)
+
+    @r.get("/v1/join")
+    def join_preview(request: Request, c: str = Query(min_length=6, max_length=64)):
+        """What joining with this code means, for the phone to show before anything happens. No token needed."""
+        throttle(request)
+        try:
+            return brain.people.preview(c)
+        except KeyError:
+            raise HTTPException(404, "this invite is not valid: it was used, it expired, or the code is wrong")
+
+    @r.post("/v1/join")
+    def join(body: JoinIn, request: Request):
+        """Join with an invite code: the member, their seat, and this device's own token (shown once). No token
+        needed: the one-time code is the proof."""
+        throttle(request)
+        try:
+            return brain.people.join(body.code, body.device_name, body.platform)
+        except KeyError:
+            raise HTTPException(404, "this invite is not valid: it was used, it expired, or the code is wrong")
+        except GraphError as e:
+            raise HTTPException(409, str(e))
+
+    @r.patch("/v1/members/{member_id}", dependencies=A)
+    def set_role(member_id: str, body: RoleIn, request: Request):
+        ws = ws_of("members", member_id)
+        return guard(brain.people.set_role, who(request, ws), ws, member_id, role=body.role,
+                     scope_node_ids=body.scope_node_ids)
+
+    @r.post("/v1/members/{member_id}/revoke", dependencies=A)
+    def revoke_member(member_id: str, request: Request):
+        """They leave: their devices stop at once and wipe on their next contact; the seat is free again."""
+        ws = ws_of("members", member_id)
+        return guard(brain.people.revoke_member, who(request, ws), ws, member_id)
+
+    @r.get("/v1/workspaces/{ws}/devices", dependencies=A)
+    def devices(ws: str, request: Request):
+        return brain.people.devices(who(request, ws_ok(ws)), ws)
+
+    @r.post("/v1/devices/{device_id}/revoke", dependencies=A)
+    def revoke_device(device_id: str, request: Request):
+        return guard(brain.people.revoke_device, who(request, ws_of("devices", device_id)), device_id)
+
+    # ---------------------------------------------------------------- a member's device copy (ADR 0014, decision 21)
+    def on_device(request: Request) -> Principal:
+        d = device(request)
+        if d is None:
+            raise HTTPException(403, "this is for a member's device (a device token)")
+        return who(request, d["workspace_id"])
+
+    @r.get("/v1/device/snapshot", dependencies=A)
+    def device_snapshot(request: Request):
+        """Everything this member may see now, and a cursor for /device/pull."""
+        return brain.devices.snapshot(on_device(request))
+
+    @r.get("/v1/device/pull", dependencies=A)
+    def device_pull(request: Request, cursor: str | None = None, limit: int = Query(default=500, ge=1, le=2000)):
+        """What changed since the cursor, as this member may see it now; tombstones for what they no longer may;
+        reset: true when they should wipe and take a new snapshot."""
+        return brain.devices.pull(on_device(request), cursor, limit)
+
+    @r.post("/v1/device/wiped", dependencies=A)
+    def device_wiped(request: Request):
+        """A revoked phone says it has wiped its copy (the owner sees it confirmed)."""
+        d = device(request)
+        if d is None:
+            raise HTTPException(403, "this is for a member's device")
+        brain.db.update("devices", {"id": d["id"]}, {"wipe_acked_at": now_iso()})
+        return {"wiped": True}
+
+    @r.get("/v1/pairing")
+    def pairing(request: Request, ws: str | None = None):
+        """For the desktop app only: what a phone needs to connect (shown as a QR code to scan with the phone)."""
+        if not is_local(request) or not local_host(request):  # this PC, by its own name (no rebound domain)
+            raise HTTPException(403, "pairing is only shown on this PC")
+        from urllib.parse import urlencode
         lan = settings.bind_host not in ("127.0.0.1", "localhost", "::1")
-        urls = [f"http://{ip}:{port}" for ip in ips]
+        urls = lan_urls(request.url.port or 8788)  # also the addresses an invite's join link carries (ADR 0014)
         wss = brain.db.query("select id, name from workspaces order by created_at desc")
         target = ws or (wss[0]["id"] if wss else None)
         links = [f"notecad://pair?{urlencode({'u': u, 't': settings.api_token or '', 'w': target or ''})}" for u in urls]

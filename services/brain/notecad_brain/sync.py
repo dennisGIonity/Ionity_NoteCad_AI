@@ -90,7 +90,11 @@ create table if not exists sync_rejects (
 create table if not exists sync_conflicts (
   id integer primary key autoincrement, tbl text not null, pk text not null, node_id text, winner text not null,
   loser text not null, at text not null);
-create index if not exists sync_conflicts_node on sync_conflicts(node_id)
+create index if not exists sync_conflicts_node on sync_conflicts(node_id);
+create table if not exists view_changes (
+  seq integer primary key autoincrement, ws text not null, node_id text not null, old_eff integer, new_eff integer,
+  old_path text, new_path text, at text not null);
+create index if not exists view_changes_ws on view_changes(ws, seq)
 """
 JOURNAL_PG = """
 create table if not exists sync_state (key text primary key, value text);
@@ -107,8 +111,34 @@ create table if not exists sync_conflicts (
   id bigserial primary key, tbl text not null, pk text not null, node_id text, winner text not null,
   loser text not null, at text not null);
 create index if not exists sync_conflicts_node on sync_conflicts(node_id);
-alter table sync_conflicts enable row level security
+alter table sync_conflicts enable row level security;
+create table if not exists view_changes (
+  seq bigserial primary key, ws text not null, node_id text not null, old_eff integer, new_eff integer,
+  old_path text, new_path text, at text not null);
+create index if not exists view_changes_ws on view_changes(ws, seq);
+alter table view_changes enable row level security
 """
+# ADR 0014, decision 21: every change of a node's level or path on this worker, whoever made it (a sync from another
+# worker too), so a device's next pull knows what it may no longer see. Local: not synced, like the journal itself.
+VIEW_TRIGGER_SQLITE = """create trigger nc_view_change after update of eff_level, path on nodes
+when OLD.eff_level is not NEW.eff_level or OLD.path is not NEW.path begin
+  insert into view_changes(ws, node_id, old_eff, new_eff, old_path, new_path, at)
+  values (NEW.workspace_id, NEW.id, OLD.eff_level, NEW.eff_level, OLD.path, NEW.path, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+end"""
+VIEW_TRIGGER_PG = [
+    """create or replace function nc_view_change() returns trigger language plpgsql security definer
+set search_path from current as $f$
+begin
+  if OLD.eff_level is distinct from NEW.eff_level or OLD.path is distinct from NEW.path then
+    insert into view_changes(ws, node_id, old_eff, new_eff, old_path, new_path, at)
+    values (NEW.workspace_id, NEW.id, OLD.eff_level, NEW.eff_level, OLD.path, NEW.path,
+            to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));
+  end if;
+  return null;
+end $f$""",
+    "drop trigger if exists nc_view_change on nodes",
+    "create trigger nc_view_change after update on nodes for each row execute function nc_view_change()",
+]
 # The workspace lookup for tables without workspace_id comes from TABLES, so a new table needs one edit (TABLES).
 # security definer: an app writing through PostgREST under row-level security can still journal its change.
 # search_path from current: the schema the function is created in (public on Supabase, a test schema in tests).
@@ -248,6 +278,8 @@ def install(db: Database) -> None:
                     c.execute(f"alter table sync_changes add column {col} {typ}")
             c.execute("drop trigger if exists nc_sync_annotate")
             c.execute(_annotate_sqlite())
+            c.execute("drop trigger if exists nc_view_change")
+            c.execute(VIEW_TRIGGER_SQLITE)
             for t, (pk, _) in TABLES.items():
                 cols = [r[1] for r in c.execute(f"pragma table_info({t})").fetchall()]
                 watched = [x for x in cols if x not in IGNORED_COLUMNS.get(t, set())]
@@ -271,7 +303,7 @@ def install(db: Database) -> None:
         else:
             for stmt in [s.strip() for s in JOURNAL_PG.split(";") if s.strip()]:
                 c.execute(stmt)
-            for stmt in pg_journal_upgrade():
+            for stmt in pg_journal_upgrade() + VIEW_TRIGGER_PG:
                 c.execute(stmt)
             c.execute(PG_FUNCTION)
             for stmt in pg_triggers():

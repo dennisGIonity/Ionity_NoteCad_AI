@@ -27,6 +27,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from .people import handin_ok
 from .permissions import OWNER, SYSTEM_PRINCIPAL, View, load_principal
 
 TUS_VERSION = "1.0.0"
@@ -225,6 +226,9 @@ def router(brain, settings, auth, ws_ok, who=None) -> APIRouter:
         if meta.get("capture_id") and not CAPTURE_ID.fullmatch(meta["capture_id"]):
             raise HTTPException(400, "capture_id must be a UUID", headers=tus_headers())
         p = principal(request, ws)
+        rev = getattr(request.state, "revoked_at", None)
+        if rev is not None and not handin_ok(rev, meta.get("recorded_at")):
+            raise HTTPException(410, "this device was removed from the business", headers=tus_headers())
         if p.read_only:
             raise HTTPException(403, "a read-only member cannot record notes", headers=tus_headers())
         if meta.get("context_node_id"):
