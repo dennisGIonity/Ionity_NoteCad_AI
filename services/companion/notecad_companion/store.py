@@ -211,6 +211,28 @@ class Store:
             out[t] = rows
         return out
 
+    def forget(self, before: float | None = None, terms: list[str] | None = None) -> dict:
+        """POPIA (the brain's retention.py and per-person erasure): memories and conversations from before `before`,
+        and everything that names one of `terms` (a person's name and aliases): memories, conversations, facts whose
+        value names them, vocabulary."""
+        out = {"memories": 0, "interactions": 0, "facts": 0, "vocab": 0}
+        with self.tx():
+            if before:
+                out["memories"] += self.db.execute("delete from memories where created_at < ?", (before,)).rowcount
+                out["interactions"] += self.db.execute("delete from interactions where created_at < ?",
+                                                       (before,)).rowcount
+            for t in [x.strip().lower() for x in (terms or []) if x and len(x.strip()) >= 2]:
+                like = f"%{t}%"
+                out["memories"] += self.db.execute("delete from memories where lower(text) like ?", (like,)).rowcount
+                out["interactions"] += self.db.execute(
+                    "delete from interactions where lower(user_text) like ? or lower(reply) like ? "
+                    "or lower(coalesce(edited_reply, '')) like ?", (like, like, like)).rowcount
+                out["facts"] += self.db.execute("delete from facts where lower(value) like ? or lower(key) like ?",
+                                                (like, like)).rowcount
+                out["vocab"] += self.db.execute("delete from vocab where lower(term) like ?", (like,)).rowcount
+                self.db.execute("delete from rhythm_terms where lower(term) like ?", (like,))
+        return out
+
     def wipe(self) -> None:
         for t in ("facts", "memories", "arms", "style", "vocab", "rhythm", "rhythm_terms", "interactions",
                   "adapters", "meta"):

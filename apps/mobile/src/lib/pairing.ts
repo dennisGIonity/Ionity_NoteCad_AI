@@ -40,7 +40,8 @@ export function loadPairing(): Pairing | null {
 
 export async function savePairing(p: Pairing | null): Promise<void> {
   try {
-    if (p) localStorage.setItem(KEY, JSON.stringify(p))
+    // Android: the token goes to the Keystore-encrypted vault (configure below), not into the WebView's storage
+    if (p) localStorage.setItem(KEY, JSON.stringify(Native.vaulted ? { ...p, token: '' } : p))
     else localStorage.removeItem(KEY)
   } catch { /* storage refused */ }
   // the Android bubble records and uploads without the app open: it needs the same address and token

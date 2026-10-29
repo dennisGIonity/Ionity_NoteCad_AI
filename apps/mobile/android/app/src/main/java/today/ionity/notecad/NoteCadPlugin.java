@@ -68,14 +68,22 @@ public class NoteCadPlugin extends Plugin {
     public void configure(PluginCall call) {
         OutboxStore.prefs(getContext()).edit()
             .putString("url", call.getString("url", ""))
-            .putString("token", call.getString("token", ""))
             .putString("ws", call.getString("ws", ""))
             .apply();
+        TokenVault.write(getContext(), call.getString("token", ""));  // encrypted with a Keystore key
         String pin = call.getString("pin", "");
         if (pin != null && !pin.isEmpty()) TlsPin.put(getContext(), call.getString("url", ""), pin);
         OutboxStore.unpark(getContext());
         UploadWorker.enqueue(getContext());
         call.resolve();
+    }
+
+    /** This phone's token, from the Keystore-encrypted vault: the web layer keeps it in memory only. */
+    @PluginMethod
+    public void token(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("token", TokenVault.read(getContext()));
+        call.resolve(o);
     }
 
     /** Trust a farm brain's own certificate (its SHA-256 from the QR or invite) before the first request to it. */

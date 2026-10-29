@@ -12,7 +12,7 @@ afterEach(() => vi.unstubAllGlobals())
 function brain(calls: string[]) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? 'GET'} ${url}`)
-    const body = init?.method === 'POST'
+    const body = url.endsWith('/api/v1/join')
       ? { token: 'nct_desk', workspace_id: 'farm', role: 'manager' }
       : { workspace: 'Highveld Farm', role: 'manager', name: 'Marie', scope: ['Infrastructure'] }
     return new Response(JSON.stringify(body), { status: 200 })
@@ -31,7 +31,8 @@ describe('joining with an invite link', () => {
     const asked: string[] = []
     expect(await joinFromLink(LINK, (t) => { asked.push(t); return false })).toBe('Not joined')
     expect(asked[0]).toBe('Join Highveld Farm as manager (Infrastructure), as Marie?')
-    expect(calls.some((c) => c.startsWith('POST'))).toBe(false)  // the one-time code is not spent
+    expect(calls).not.toContain('POST http://192.168.1.20:8788/api/v1/join')  // the one-time code is not spent
+    expect(calls.some((c) => c.includes('abcdefgh12'))).toBe(false)  // and never in a URL (POPIA review)
   })
 
   it('keeps the device token and the brain once confirmed', async () => {

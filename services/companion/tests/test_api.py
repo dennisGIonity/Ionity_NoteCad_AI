@@ -69,3 +69,21 @@ def test_brain_digest_asks_as_the_member():
         return httpx.Response(200, json={"tasks": [], "alerts": [], "map": {"lines": []}})
     brain_digest("http://brain", "farm", transport=httpx.MockTransport(handler), as_member="m-thandi")()
     assert seen == [{"as_member": "m-thandi"}]
+
+
+def test_forget_reaches_the_companion_memory(tmp_path):
+    """POPIA: the brain's retention period and per-person erasure also clear what the companion learned."""
+    import time
+    c = client(tmp_path)
+    c.post("/v1/farm/observe", json={"text": "Thabo was off sick on Monday", "node_path": "Staff"})
+    c.post("/v1/farm/observe", json={"text": "Borehole 2 pressure low", "node_path": "Water"})
+    c.post("/v1/farm/chat", json={"text": "Is Thabo back?"})
+    c.post("/v1/farm/observe", json={"text": "Thandi fixed the gate", "as_member": "m-thandi"})
+    got = c.post("/v1/farm/forget", json={"terms": ["Thabo"]}).json()
+    assert got["memories"] >= 1 and got["interactions"] == 1  # the note, and the chat about him
+    data = c.get("/v1/farm/export").json()["data"]
+    assert "thabo" not in str(data).lower() and "Borehole" in str(data["memories"])
+    assert c.post("/v1/farm/forget", json={"before": time.time() + 1}).json()["memories"] >= 1
+    assert c.get("/v1/farm/export").json()["data"]["memories"] == []
+    # a member's own store is reached with as_member
+    assert c.post("/v1/farm/forget", json={"terms": ["gate"], "as_member": "m-thandi"}).json()["memories"] == 1

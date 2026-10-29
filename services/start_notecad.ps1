@@ -114,6 +114,15 @@ function Get-Health {
     $rows += [pscustomobject]@{ Name = "Edge AI Node"; Port = ":8789"; State = $(if ($e.ok) { "OK" } else { "FAIL" })
       Detail = $(if ($e.ok) { "sync hub, $($e.db)" } else { "not answering" }) }
   }
+  # POPIA s19: is the drive with data\ encrypted at rest? (read without admin rights; 1 on, 3 encrypting, 6 on and
+  # locked; 0 means no BitLocker, as on Windows Home). And this PC needs no token: fine for one user, not a shared PC.
+  $drive = (Get-Item $Root).PSDrive.Name + ":"
+  $bl = try { (New-Object -ComObject Shell.Application).NameSpace($drive).Self.ExtendedProperty('System.Volume.BitLockerProtection') } catch { $null }
+  $encrypted = @(1, 3, 6) -contains $bl
+  $rows += [pscustomobject]@{ Name = "Disk"; Port = $drive; State = $(if ($encrypted) { "OK" } else { "WARN" })
+    Detail = $(if ($encrypted) { "BitLocker on: data at rest is encrypted" } else { "not encrypted (BitLocker $bl): turn on BitLocker or Device Encryption for data\ (POPIA s19)" }) }
+  $rows += [pscustomobject]@{ Name = "This PC"; Port = ""; State = "INFO"
+    Detail = "needs no token on loopback: on a shared PC set NC_BRAIN_TRUST_LOOPBACK=0 in the vault" }
   if ($b.ok) {
     $ws = @(Get-Json "http://127.0.0.1:8788/api/v1/workspaces" | ForEach-Object { $_ })  # PS 5.1 hands back the array as one object
     $hasShow = @($ws | Where-Object { $_.id -eq "showcase" }).Count -gt 0
@@ -132,6 +141,7 @@ function Show-Health($rows) {
       "WAIT" { "[WAIT]", "Yellow" }
       "OFF"  { "[ -- ]", "DarkGray" }
       "INFO" { "[ .. ]", "Cyan" }
+      "WARN" { "[WARN]", "Yellow" }
       default { "[FAIL]", "Red" }
     }
     Write-Host ("  {0} " -f $tag) -ForegroundColor $col -NoNewline

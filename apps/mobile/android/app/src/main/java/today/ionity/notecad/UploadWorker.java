@@ -43,7 +43,7 @@ public class UploadWorker extends Worker {
     public Result doWork() {
         Context c = getApplicationContext();
         SharedPreferences p = OutboxStore.prefs(c);
-        String url = p.getString("url", ""), token = p.getString("token", ""), ws = p.getString("ws", "");
+        String url = p.getString("url", ""), token = TokenVault.read(c), ws = p.getString("ws", "");
         if (url.isEmpty() || ws.isEmpty()) return Result.success();  // not paired yet: the notes wait
         boolean retry = false;
         for (JSONObject o : OutboxStore.all(c)) {

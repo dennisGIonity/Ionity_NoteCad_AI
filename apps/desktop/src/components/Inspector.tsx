@@ -154,6 +154,12 @@ export function Inspector() {
                     </select>
                   </label>
                 ) : (node.eff_level ?? 3) < 3 && <span className="flex items-center gap-1 text-amber-200"><Lock className="size-3" />{node.eff_level === 1 ? 'owners' : 'managers'}</span>}
+                {me?.level === 1 && node.kind === 'person' && !node.virtual && (
+                  // POPIA s24: a person named in notes who has no login (a member is erased from People & seats)
+                  <button type="button" onClick={() => {
+                    if (window.prompt(`Erase ${node.title}? Their name becomes [removed] in every note, task and alert, and the companion forgets them. Type ERASE to go ahead.`) === 'ERASE') void act('erase', () => api.subjectErase(useApp.getState().ws, node.id))
+                  }} className="rounded-full bg-rose-500/15 px-2 py-0.5 text-rose-200 hover:bg-rose-500/25">Erase this person</button>
+                )}
               </div>
             </div>
             <button type="button" aria-label="Close" onClick={() => select(null)} className="grid size-8 place-items-center rounded-full text-slate-400 hover:bg-white/10"><X className="size-4" /></button>

@@ -190,3 +190,34 @@ def category_of(text: str) -> str:
         if pat.search(text):
             return cat
     return "other"
+
+
+# POPIA s26-33: a note that names a person together with health, disciplinary, union or religious details. Those are
+# not filed on a branch everyone sees without an owner deciding (pipeline: held in the Inbox for the owners). Animals
+# and machines get sick and break too: a note about them is not about a person.
+SENSITIVE = {
+    "health": re.compile(r"\b(sick|siek|ill|injur\w*|hurt|beseer\w*|hospital\w*|hospitaal|doctor|dokter|clinic|kliniek|"
+                         r"hiv|aids|tb|tuberculosis|pregnan\w*|swanger|diabet\w*|medication|medisyne|sick ?leave|"
+                         r"siekverlof|surgery|operasie)\b", re.I),
+    "disciplinary": re.compile(r"\b(disciplin\w*|dissipline\w*|warning letter|written warning|final warning|dismiss\w*|"
+                               r"fired|afgedank|hearing|suspend\w*|geskors\w*|drunk|dronk|theft|stole|steel|gesteel)\b",
+                               re.I),
+    "union": re.compile(r"\b(union|vakbond)\b", re.I),
+    "religion": re.compile(r"\b(church|kerk|mosque|moskee|religio\w*|godsdiens)\b", re.I),
+}
+NOT_A_PERSON = re.compile(r"\b(ewes?|rams?|sheep|skape|ooie|lambs?|lammers|cows?|cattle|beeste|koeie|calf|calves|kalwers|"
+                          r"bulls?|bulle|heifers?|goats?|bokke|pigs?|varke|horses?|perde|dogs?|honde|chickens?|hoenders|"
+                          r"tractor|trekker|pump|pomp|engine|enjin|bakkie|truck|vehicle)\b", re.I)
+
+
+def sensitive_about(event: str, names: list[str]) -> tuple[str, str] | None:
+    """(the person's name, the kind of detail) when the note names a person with special personal information."""
+    if NOT_A_PERSON.search(event):
+        return None
+    kind = next((k for k, p in SENSITIVE.items() if p.search(event)), None)
+    if kind is None:
+        return None
+    for n in sorted({x for x in names if x and len(x) >= 3}, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(n)}\b", event, re.I):
+            return n, kind
+    return None

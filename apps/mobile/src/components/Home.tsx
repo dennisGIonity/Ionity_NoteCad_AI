@@ -55,6 +55,17 @@ function Status() {
   )
 }
 
+/** POPIA s23: the member's own copy, shared or saved through the phone (no upload anywhere else). */
+async function copyMine() {
+  const data = await usePhone.getState().myCopy()
+  if (!data) return
+  const file = new File([JSON.stringify(data, null, 2)], 'my-notecad-information.json', { type: 'application/json' })
+  if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }).catch(() => undefined); return }
+  const url = URL.createObjectURL(file)
+  Object.assign(document.createElement('a'), { href: url, download: file.name }).click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function Menu() {
   const unpair = usePhone((s) => s.unpair)
   const me = usePhone((s) => s.me)
@@ -78,6 +89,11 @@ function Menu() {
           {usePhone.getState().privacy && (
             <button type="button" onClick={() => { setOpen(false); setPrivacy(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-100 hover:bg-white/5">
               <ShieldCheck className="size-4" />Privacy notice
+            </button>
+          )}
+          {usePhone.getState().pairing?.member && (
+            <button type="button" onClick={() => { setOpen(false); void copyMine() }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-100 hover:bg-white/5">
+              <ShieldCheck className="size-4" />A copy of my information
             </button>
           )}
           <button type="button" onClick={() => { setOpen(false); void unpair() }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-rose-200 hover:bg-white/5">

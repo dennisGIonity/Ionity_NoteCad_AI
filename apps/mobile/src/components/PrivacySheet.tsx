@@ -28,14 +28,16 @@ export function PrivacySheet({ onClose }: { onClose?: () => void }) {
           )}
         </div>
         <div className="space-y-2">
-          <p><b className="text-slate-100">Who is responsible:</b> {n.business}{n.owners.length ? ` (${n.owners.join(', ')})` : ''}. Questions about your information: {n.contact ?? 'ask the owner'}.</p>
+          <p><b className="text-slate-100">Who is responsible:</b> {n.business}{n.owners.length ? ` (${n.owners.join(', ')})` : ''}. Information Officer: {n.officer ?? 'the owner'}. Questions about your information: {n.contact ?? 'ask the owner'}.</p>
           <p><b className="text-slate-100">What is recorded:</b> your voice notes and their text, what is filed from them, who made each change and when, and this phone. No location, contacts or ID numbers.</p>
           <p><b className="text-slate-100">Why:</b> to run the business's work on its map.</p>
           <p><b className="text-slate-100">Who sees it:</b> each person sees only what their role allows.</p>
+          <p><b className="text-slate-100">At work:</b> your voice notes, the tasks you are given and how far you got, and your changes are recorded as part of the work. You can see your own activity, and get a copy of everything about you from the menu.</p>
           <p><b className="text-slate-100">Where:</b> on the business's own computer{abroad.length ? `; also: ${abroad.join('; ')}` : ', and nothing leaves it'}.</p>
           <p><b className="text-slate-100">How long:</b> {n.retention_text}.</p>
           <p><b className="text-slate-100">Your rights:</b> ask what is held about you, have it corrected or deleted, or object, through the contact above; or complain to the Information Regulator (inforegulator.org.za).</p>
           <p>Please do not dictate health, religion, union or other sensitive details about anyone.</p>
+          {!n.my_ack_at && <p className="text-amber-200">Your notes wait on this phone until you have read this.</p>}
         </div>
         {!n.my_ack_at && (
           <button type="button" disabled={busy} onClick={() => { setBusy(true); void ack().finally(() => setBusy(false)) }}

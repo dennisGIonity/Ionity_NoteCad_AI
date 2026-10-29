@@ -14,7 +14,17 @@ from . import retention
 from .common import now_iso
 from .permissions import OWNER, Principal
 
-VERSION = 1  # a new version asks everyone to read it again
+VERSION = 2  # a new version asks everyone to read it again (2: Information Officer, monitoring, cloud gate)
+UNREAD = "privacy_unread: read the privacy notice in the app before your first note"
+
+
+def must_read(db, p: Principal) -> bool:
+    """A member (not an owner, who sets the notice) records nothing before reading it (POPIA s18). A revoked phone
+    handing in its last notes is not asked: those go to an owner anyway."""
+    if not p.member_id or p.level <= OWNER or not p.active:
+        return False
+    r = db.one("select privacy_ack_at from members where id=?", (p.member_id,))
+    return not (r and r["privacy_ack_at"])
 
 
 def _load(v) -> dict:
@@ -26,13 +36,21 @@ def _load(v) -> dict:
         return {}
 
 
-def cloud(brain) -> dict:
+def cloud_allowed(db, ws: str) -> bool:
+    """The owner turned the cloud transfer on for this workspace, after the notice said where things go."""
+    r = db.one("select privacy from workspaces where id=?", (ws,))
+    return bool(_load(r["privacy"] if r else None).get("cloud_ok"))
+
+
+def cloud(brain, ws: str | None = None) -> dict:
     """What leaves this PC, and to where (POPIA s72), from the switches actually in use."""
     s = brain.settings
     claude = bool(os.environ.get("ANTHROPIC_API_KEY")) and "claude" in (s.routers or "")
     deepgram = bool(s.deepgram_key or os.environ.get("DEEPGRAM_API_KEY")) and "deepgram" in (s.stt_engines or "")
     sync = s.sync_target or ""
-    return {"claude": claude, "deepgram": deepgram,
+    allowed = cloud_allowed(brain.db, ws) if ws else False
+    return {"claude": claude and allowed, "deepgram": deepgram and allowed, "allowed": allowed,
+            "available": {"claude": claude, "deepgram": deepgram},
             "sync": "supabase" if sync.startswith(("postgres://", "postgresql://")) else ("edge node" if sync else None)}
 
 
@@ -48,13 +66,16 @@ def notice(brain, p: Principal, ws: str) -> dict:
     days = retention.read(brain.db, ws)
     acked = (me or {}).get("privacy_ack_at")
     return {"version": VERSION, "business": w["name"], "owners": owners, "contact": priv.get("contact"),
+            # s55: the head of the business is its Information Officer unless the owner names another
+            "officer": priv.get("officer") or (owners[0] if owners else None), "officer_named": bool(priv.get("officer")),
             "accepted_at": priv.get("accepted_at") if priv.get("version") == VERSION else None,
             "retention": days, "retention_text": retention.describe(days), "recommended": retention.RECOMMENDED,
-            "cloud": cloud(brain), "my_ack_at": acked if priv.get("version") == VERSION or acked else None,
+            "cloud": cloud(brain, ws), "my_ack_at": acked if priv.get("version") == VERSION or acked else None,
             "is_owner": p.level <= OWNER}
 
 
-def accept(brain, p: Principal, ws: str, contact: str | None, periods: dict | None) -> dict:
+def accept(brain, p: Principal, ws: str, contact: str | None, periods: dict | None, cloud_ok: bool | None = None,
+           officer: str | None = None) -> dict:
     """An owner sets the contact and the periods and accepts the notice. Periods are checked (retention.clean)."""
     if p.level > OWNER or not p.active:
         raise PermissionError("only an owner sets the privacy notice and how long things are kept")
@@ -66,6 +87,13 @@ def accept(brain, p: Principal, ws: str, contact: str | None, periods: dict | No
         priv["contact"] = contact.strip()[:200] or None
     if not priv.get("contact"):
         raise ValueError("give a contact (a name and a phone number or email) for questions about personal information")
+    if officer is not None:
+        priv["officer"] = officer.strip()[:200] or None
+    if cloud_ok is not None and bool(cloud_ok) != bool(priv.get("cloud_ok")):
+        priv.update({"cloud_ok": bool(cloud_ok), "cloud_at": now_iso(), "cloud_by": p.member_id})
+        import logging
+        logging.getLogger("notecad.security").info("cloud transfer gate %s ws=%s by=%s",
+                                                   "on" if cloud_ok else "off", ws, p.member_id)
     priv.update({"version": VERSION, "accepted_at": now_iso(), "accepted_by": p.member_id})
     fields: dict = {"privacy": json.dumps(priv)}
     if periods is not None:

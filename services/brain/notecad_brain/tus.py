@@ -231,6 +231,9 @@ def router(brain, settings, auth, ws_ok, who=None) -> APIRouter:
             raise HTTPException(410, "this device was removed from the business", headers=tus_headers())
         if p.read_only:
             raise HTTPException(403, "a read-only member cannot record notes", headers=tus_headers())
+        from . import privacy
+        if privacy.must_read(brain.db, p):
+            raise HTTPException(403, privacy.UNREAD, headers=tus_headers())
         if meta.get("context_node_id"):
             n = brain.graph.node(meta["context_node_id"])
             if n is None or n["workspace_id"] != ws or not View(brain.db, p, ws).rows(meta["context_node_id"]):

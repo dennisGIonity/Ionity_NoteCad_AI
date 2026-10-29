@@ -49,6 +49,8 @@ function PrivacyNotice({ ws, notice, onDone, canClose }: {
   ws: string; notice: Notice; onDone: (n: Notice) => void; canClose: boolean
 }) {
   const [contact, setContact] = useState(notice.contact ?? '')
+  const [officer, setOfficer] = useState(notice.officer_named ? notice.officer ?? '' : '')
+  const [cloudOk, setCloudOk] = useState(notice.cloud.allowed)
   const [days, setDays] = useState<Retention>(notice.accepted_at ? notice.retention : { ...notice.recommended })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -57,7 +59,8 @@ function PrivacyNotice({ ws, notice, onDone, canClose }: {
     setBusy(true)
     setErr(null)
     try {
-      onDone(owner ? await api.acceptPrivacy(ws, contact.trim(), days) : await api.ackPrivacy(ws))
+      onDone(owner ? await api.acceptPrivacy(ws, { contact: contact.trim(), retention: days, officer: officer.trim(), cloud: cloudOk })
+        : await api.ackPrivacy(ws))
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -83,10 +86,11 @@ function PrivacyNotice({ ws, notice, onDone, canClose }: {
           )}
         </header>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-xs leading-relaxed text-slate-300">
-          <p><b className="text-slate-100">Who is responsible.</b> {notice.business}{notice.owners.length ? ` (${notice.owners.join(', ')})` : ''}. Questions and requests about your personal information: {notice.contact || <i>the owner fills this in below</i>}.</p>
+          <p><b className="text-slate-100">Who is responsible.</b> {notice.business}{notice.owners.length ? ` (${notice.owners.join(', ')})` : ''}. Information Officer: {notice.officer ?? 'the owner'}. Questions and requests about your personal information: {notice.contact || <i>the owner fills this in below</i>}.</p>
           <p><b className="text-slate-100">What is recorded.</b> Voice notes and their text; the notes, tasks and alerts made from them; the names of people mentioned; who made each change and when; the phones that joined. No location, contacts or ID numbers.</p>
           <p><b className="text-slate-100">Why.</b> To run the business's work: field notes filed on its map, tasks and alerts for the people who do them.</p>
           <p><b className="text-slate-100">Who sees it.</b> Each person sees only the branches their role allows. Owners decide the roles.</p>
+          <p><b className="text-slate-100">At work.</b> For the people who work here, your voice notes, the tasks you are given and how far you got, and every change you make are recorded as part of the work. You can see your own activity in the app, and nothing here is used to decide about you without a person.</p>
           <p><b className="text-slate-100">Where it is kept.</b> On the business's own computer{abroad.length ? `; also: ${abroad.join('; ')}` : ', and nothing leaves it'}.</p>
           <p><b className="text-slate-100">How long.</b> Recordings {kept('audio_days')}, transcripts {kept('transcript_days')}, the activity log {kept('log_days')}. Notes on the map stay until someone deletes them.</p>
           <p><b className="text-slate-100">Your rights.</b> Ask what is held about you, have it corrected or deleted, or object, through the contact above. You may also complain to the Information Regulator (inforegulator.org.za).</p>
@@ -98,6 +102,10 @@ function PrivacyNotice({ ws, notice, onDone, canClose }: {
                 <span className="w-40 shrink-0">Contact</span>
                 <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Name, phone or email" className={`${field} flex-1`} />
               </label>
+              <label className="flex items-center gap-2">
+                <span className="w-40 shrink-0">Information Officer</span>
+                <input value={officer} onChange={(e) => setOfficer(e.target.value)} placeholder={notice.owners[0] ? `${notice.owners[0]} (the head of the business)` : 'Name'} className={`${field} flex-1`} />
+              </label>
               {PERIODS.map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2">
                   <span className="w-40 shrink-0">{label}</span>
@@ -107,6 +115,12 @@ function PrivacyNotice({ ws, notice, onDone, canClose }: {
                   </select>
                 </label>
               ))}
+              {(notice.cloud.available.claude || notice.cloud.available.deepgram) && (
+                <label className="flex items-start gap-2">
+                  <input type="checkbox" checked={cloudOk} onChange={(e) => setCloudOk(e.target.checked)} className="mt-0.5" />
+                  <span>Send notes abroad for better results: {[notice.cloud.available.claude && 'note text to Anthropic (USA)', notice.cloud.available.deepgram && 'recordings to Deepgram (USA)'].filter(Boolean).join(' and ')}. Branches only owners or managers see never leave this computer. Off until you tick this.</span>
+                </label>
+              )}
             </section>
           )}
           {err && <p role="alert" className="text-rose-300">{err}</p>}

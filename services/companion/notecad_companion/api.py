@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from . import PROVENANCE, __version__, trainer
@@ -129,6 +129,12 @@ class FeedbackIn(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
 
 
+class ForgetIn(BaseModel):
+    before: float | None = None  # unix time: what is older goes
+    terms: list[str] | None = Field(default=None, max_length=50)  # a person's name and aliases: what names them goes
+    as_member: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+
 class ObserveIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     as_member: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")  # sent by the brain (ADR 0014)
@@ -172,8 +178,9 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
         if settings.api_token and authorization != f"Bearer {settings.api_token}":
             raise HTTPException(401, "missing or wrong token")
 
-    def owner(owner_id: str, _: None = Depends(auth)) -> Companion:
-        return reg.get(owner_id)
+    def owner(owner_id: str, as_member: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+              _: None = Depends(auth)) -> Companion:
+        return reg.get(owner_id, as_member)
 
     @app.get("/health")
     def health():
@@ -250,10 +257,20 @@ def create_app(settings: Settings | None = None, llm=None, embedder=None) -> Fas
     def export(c: Companion = Depends(owner)):
         return {"provenance": PROVENANCE, "exported_at": time.time(), "data": c.store.export()}
 
+    @app.post("/v1/{owner_id}/forget")
+    def forget(owner_id: str, body: ForgetIn, _: None = Depends(auth)):
+        """POPIA: the brain's retention period (before) and per-person erasure (terms) reach this memory too."""
+        c = reg.get(owner_id, body.as_member)
+        with reg.using(c):
+            return c.store.forget(body.before, body.terms)
+
     @app.delete("/v1/{owner_id}")
-    def wipe(owner_id: str, c: Companion = Depends(owner)):
+    def wipe(owner_id: str, as_member: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+             c: Companion = Depends(owner)):
         c.store.wipe()
-        reg.drop(owner_id)
+        reg.drop(f"{owner_id}~{as_member}" if as_member else owner_id)
+        import shutil
+        shutil.rmtree(Path(settings.data_dir) / "training" / owner_id, ignore_errors=True)  # its LoRA examples
         return {"wiped": owner_id}
 
     return app

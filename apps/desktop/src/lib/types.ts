@@ -252,8 +252,10 @@ export interface Member {
 export interface Retention { audio_days: number | null; transcript_days: number | null; log_days: number | null }
 export interface PrivacyNotice {
   version: number; business: string; owners: string[]; contact: string | null; accepted_at: string | null
+  officer: string | null; officer_named: boolean
   retention: Retention; retention_text: string; recommended: Retention
-  cloud: { claude: boolean; deepgram: boolean; sync: string | null }; my_ack_at: string | null; is_owner: boolean
+  cloud: { claude: boolean; deepgram: boolean; allowed: boolean; available: { claude: boolean; deepgram: boolean }; sync: string | null }
+  my_ack_at: string | null; is_owner: boolean
 }
 export interface Seat { id: string; role_level: number; status: string; assigned_member_id?: string | null; member_name?: string | null }
 export interface Invite {

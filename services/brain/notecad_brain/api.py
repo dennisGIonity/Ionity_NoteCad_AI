@@ -126,6 +126,8 @@ class AskIn(BaseModel):
 class PrivacyIn(BaseModel):
     contact: str | None = Field(default=None, max_length=200)
     retention: dict | None = None  # {"audio_days": 90, "transcript_days": 365, "log_days": 365}; null keeps
+    cloud: bool | None = None  # POPIA s72: send notes to Claude / recordings to Deepgram (off unless an owner says)
+    officer: str | None = Field(default=None, max_length=200)  # the Information Officer (s55), shown in the notice
 
 
 class SeatsIn(BaseModel):
@@ -140,6 +142,10 @@ class InviteIn(BaseModel):
     person_node_id: str | None = Field(default=None, max_length=64)
     scope_node_ids: list[str] = Field(default=[], max_length=20)
     hours: int = Field(default=72, ge=1, le=168)
+
+
+class JoinPreviewIn(BaseModel):
+    code: str = Field(min_length=6, max_length=64)
 
 
 class JoinIn(BaseModel):
@@ -200,16 +206,11 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
 
             def loop():
                 next_decay = 0.0
-                next_purge = time.monotonic() + 60  # retention (POPIA): a minute after start, then every 6 hours
                 while not stop.is_set():
                     try:
                         if time.monotonic() >= next_decay:  # info rings and done marks fade without anyone asking
                             next_decay = time.monotonic() + 600
                             brain.decay_all()
-                        if time.monotonic() >= next_purge:
-                            next_purge = time.monotonic() + 6 * 3600
-                            from . import retention
-                            retention.purge_all(brain)
                         if brain.run_jobs() == 0:
                             stop.wait(0.5)
                     except Exception:
@@ -227,6 +228,20 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
                 except Exception as ex:
                     app.state.stt_ready = f"{type(ex).__name__}: {ex}"[:200]
             threading.Thread(target=warm_up, name="notecad-stt-warm", daemon=True).start()
+        def keep_periods():
+            """Retention (POPIA s14) on every brain, an Edge AI Node hub without a worker too: a minute after start,
+            then every 6 hours."""
+            from . import retention
+            if stop.wait(60):
+                return
+            while True:
+                try:
+                    retention.purge_all(brain)
+                except Exception:
+                    log.exception("retention")
+                if stop.wait(6 * 3600):
+                    return
+        threading.Thread(target=keep_periods, name="notecad-retention", daemon=True).start()
         if settings.worker:
             brain.sync.start()  # background push / pull when NC_BRAIN_SYNC_TARGET is set
         yield
@@ -243,6 +258,32 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"],
                            allow_headers=["Authorization", "Content-Type", "Last-Event-ID", *TUS_ALLOW],
                            expose_headers=TUS_EXPOSE, allow_credentials=False)
+    # POPIA s19 / s22: browser hardening on every answer, and a security log a breach can be found and reported from
+    # (refused credentials and origins, revoked devices, throttled joins: who, from where, when; never a token)
+    sec = logging.getLogger("notecad.security")
+    companion_origins = " ".join(f"http://{h}:8787" for h in ("127.0.0.1", "localhost"))
+    CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+           f"media-src 'self' blob:; connect-src 'self' {companion_origins}; frame-ancestors 'none'; "
+           "base-uri 'none'; form-action 'self'")
+
+    @app.middleware("http")
+    async def harden(request: Request, call_next):
+        res = await call_next(request)
+        h = res.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Referrer-Policy", "no-referrer")
+        h.setdefault("Permissions-Policy", "microphone=(self), camera=(), geolocation=()")
+        path = request.url.path
+        if path.startswith("/app"):
+            h.setdefault("Content-Security-Policy", CSP)
+        elif path.startswith(("/v1", "/api")):
+            h.setdefault("Cache-Control", "no-store")
+        if res.status_code in (401, 403, 410, 429):
+            sec.warning("refused %s %s %s from %s", res.status_code, request.method, path,
+                        request.client.host if request.client else "?")
+        return res
+
     r = APIRouter()
 
     LOOPBACK = {"127.0.0.1", "::1", "localhost"}
@@ -578,9 +619,16 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         return changed(res, lambda: brain.node_detail(node_id, View(brain.db, v.p, ws)))
 
     # ---------------------------------------------------------------- captures
+    def unread(p: Principal) -> None:
+        """POPIA s18: a member reads the privacy notice before their first note."""
+        from . import privacy
+        if privacy.must_read(brain.db, p):
+            raise HTTPException(403, privacy.UNREAD)
+
     @r.post("/v1/workspaces/{ws}/captures", dependencies=A)
     def capture_text(ws: str, body: CaptureIn, request: Request):
         p = who(request, ws_ok(ws))
+        unread(p)
         r = guard(brain.register_capture, ws, text=body.text, capture_id=body.capture_id, recorded_at=body.recorded_at,
                   source=body.source, lang_hint=body.lang_hint, geo=body.geo, enqueue=not body.wait, principal=p)
         if body.wait and not r["duplicate"]:
@@ -591,6 +639,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     async def capture_audio(ws: str, request: Request, capture_id: str | None = None, recorded_at: str | None = None,
                             source: str = "phone", lang_hint: str | None = None):
         p = who(request, ws_ok(ws))
+        unread(p)
         audio = await request.body()
         if not audio:
             raise HTTPException(400, "empty body")
@@ -713,6 +762,7 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         neighbours are preferred when the brain decides where the note goes."""
         ws_ok(ws)
         principal = who(request, ws)
+        unread(principal)
         ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
         fields: dict = {k: v for k, v in request.query_params.items() if k != "token"}
         audio = mime = None
@@ -964,7 +1014,8 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
         """An owner: the contact for questions, how long things are kept, and accepting the notice."""
         from . import privacy
         try:
-            return guard(privacy.accept, brain, who(request, ws_ok(ws)), ws, body.contact, body.retention)
+            return guard(privacy.accept, brain, who(request, ws_ok(ws)), ws, body.contact, body.retention,
+                         body.cloud, body.officer)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -972,6 +1023,21 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     def privacy_ack(ws: str, request: Request):
         from . import privacy
         return guard(privacy.acknowledge, brain, who(request, ws_ok(ws)), ws)
+
+    @r.get("/v1/workspaces/{ws}/subjects/{sid}/export", dependencies=A)
+    def subject_export(ws: str, sid: str, request: Request):
+        """Everything about one person (POPIA s23): a member id or a person on the map. An owner, or the member
+        themselves."""
+        from . import subjects
+        return guard(subjects.export, brain, who(request, ws_ok(ws)), ws, sid)
+
+    @r.post("/v1/workspaces/{ws}/subjects/{sid}/erase", dependencies=A)
+    def subject_erase(ws: str, sid: str, request: Request, confirm: str = Query(default="")):
+        """Erase one person (POPIA s24): an owner, with ?confirm=<the same id>. What is kept, and why, is in the answer."""
+        from . import subjects
+        if confirm != sid:
+            raise HTTPException(400, "add ?confirm=<the person's id> to erase them")
+        return guard(subjects.erase, brain, who(request, ws_ok(ws)), ws, sid)
 
     @r.post("/v1/workspaces/{ws}/retention/run", dependencies=A)
     def retention_run(ws: str, request: Request):
@@ -1012,9 +1078,19 @@ def create_app(brain: Brain | None = None, settings: Settings | None = None) -> 
     def revoke_invite(invite_id: str, request: Request):
         return guard(brain.people.revoke_invite, who(request, ws_of("invites", invite_id)), invite_id)
 
-    @r.get("/v1/join")
+    @r.post("/v1/join/preview")
+    def join_preview_post(body: JoinPreviewIn, request: Request):
+        """What joining with this code means, for the phone to show before anything happens. No token needed. The code
+        goes in the body, never in a URL (POPIA review: a URL ends up in logs and history)."""
+        throttle(request)
+        try:
+            return brain.people.preview(body.code)
+        except KeyError:
+            raise HTTPException(404, "this invite is not valid: it was used, it expired, or the code is wrong")
+
+    @r.get("/v1/join", deprecated=True)
     def join_preview(request: Request, c: str = Query(min_length=6, max_length=64)):
-        """What joining with this code means, for the phone to show before anything happens. No token needed."""
+        """Apps from before POST /v1/join/preview (one more release); the log blanks the code."""
         throttle(request)
         try:
             return brain.people.preview(c)

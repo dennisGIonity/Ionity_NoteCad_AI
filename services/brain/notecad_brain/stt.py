@@ -42,6 +42,7 @@ class STTError(RuntimeError):
 
 class DeepgramSTT:
     name = "deepgram:nova-3"
+    cloud = True  # sends the recording to Deepgram (USA): POPIA s72, behind the workspace's cloud transfer gate
 
     def __init__(self, api_key: str | None = None, model: str = "nova-3", timeout: float = 60.0, transport=None):
         self.key = api_key or os.environ.get("DEEPGRAM_API_KEY")
@@ -216,6 +217,18 @@ class ChainSTT:
         if best and best.text:
             return best
         raise STTError("; ".join(errors) or "no transcript")
+
+
+def local_only(stt: STT | None) -> STT | None:
+    """The engines that keep the recording on this PC (POPIA s72: the cloud transfer gate is off)."""
+    if stt is None or not getattr(stt, "cloud", False) and not isinstance(stt, ChainSTT):
+        return stt
+    if isinstance(stt, ChainSTT):
+        keep = [e for e in stt.engines if not getattr(e, "cloud", False)]
+        if len(keep) == len(stt.engines):
+            return stt
+        return (keep[0] if len(keep) == 1 else ChainSTT(keep, stt.min_confidence)) if keep else None
+    return None
 
 
 def make_stt(settings) -> STT | None:

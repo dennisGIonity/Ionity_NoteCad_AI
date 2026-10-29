@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 import time
+import logging
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,7 @@ from .routers import (ClaudeRouter, LocalRouter, RouteContext, RouterChain, Rule
                       assignee_from_text)
 from .stt import STT, STTError, make_stt
 from .validate import check
+log = logging.getLogger("notecad.brain")
 
 
 AUDIO_EXT = {"audio/ogg": ".ogg", "audio/opus": ".opus", "audio/webm": ".webm", "video/webm": ".webm",
@@ -105,6 +107,39 @@ class CompanionLink:
 
     def _client(self):
         return httpx.Client(base_url=self.base_url or "", timeout=self._timeout, transport=self._transport)
+
+    def forget(self, owner: str, terms: list[str] | None, members: list[str], before: float | None = None,
+               wipe: str | None = None) -> dict | None:
+        """POPIA: what the owner's companion and every member's own companion learned that is older than `before`, or
+        that names one of `terms`; `wipe`: a member whose own store goes entirely. None when no companion is set."""
+        if not self.base_url:
+            return None
+        got: dict = {}
+        try:
+            with self._client() as c:
+                for m in [None, *members]:
+                    r = c.post(f"/v1/{owner}/forget", json={"before": before, "terms": terms,
+                                                            **({"as_member": m} if m else {})})
+                    if r.status_code == 200:
+                        for k, v in r.json().items():
+                            got[k] = got.get(k, 0) + v
+                if wipe:
+                    c.delete(f"/v1/{owner}", params={"as_member": wipe})
+        except Exception:
+            log.warning("companion forget for %s did not reach the companion", owner)
+            return None
+        return got
+
+    def export(self, owner: str, member: str) -> dict | None:
+        """A member's own companion store, for their export (POPIA s23)."""
+        if not self.base_url:
+            return None
+        try:
+            with self._client() as c:
+                r = c.get(f"/v1/{owner}/export", params={"as_member": member})
+                return r.json().get("data") if r.status_code == 200 else None
+        except Exception:
+            return None
 
     def observe(self, owner: str, body: str, node_path: str | None, member: str | None = None) -> None:
         """member: a member other than the owner said it, so it goes to their own companion memory (ADR 0014)."""
@@ -244,6 +279,19 @@ class Brain:
         ws = cap["workspace_id"]
         return load_principal(self.db, ws, cap.get("member_id")) or owner_principal(self.db, ws)
 
+    def _touches_restricted(self, cands: list[dict], event: str) -> bool:
+        """POPIA s72: is this note about a restricted branch (one of its three best candidates is, or it names one)?
+        Then it does not leave this PC. Every restricted candidate is marked, so a cloud router never gets those."""
+        low, hit = event.lower(), False
+        for i, c in enumerate(cands):
+            n = self.graph.node(c["node_id"])
+            if n and (n.get("eff_level") or EMPLOYEE) < EMPLOYEE:
+                c["restricted"] = True
+                names = [n["title"], *c.get("aliases", [])]
+                if i < 3 or any(x and len(x) >= 3 and x.lower() in low for x in names):
+                    hit = True
+        return hit
+
     def _node_event(self, ws: str, nid: str, cid: str | None = None) -> None:
         n = self.graph.node(nid)
         if n:
@@ -265,6 +313,8 @@ class Brain:
         principal = self.capture_principal(cap)
         view = View(self.db, principal if principal.active else owner_principal(self.db, ws), ws)
         author = principal.member_id
+        from . import privacy
+        cloud_ok = privacy.cloud_allowed(self.db, ws)  # POPIA s72: the owner's cloud transfer gate, off by default
         try:
             # 1 speech to text
             transcript_text = cap["text"]
@@ -274,13 +324,17 @@ class Brain:
             if not transcript_text:
                 if not cap["audio_path"]:
                     raise STTError("capture has neither text nor audio")
-                if self.stt is None:
-                    raise STTError("no speech-to-text engine configured (set NC_BRAIN_DEEPGRAM_KEY or install faster-whisper)")
+                from .stt import local_only
+                stt = self.stt if cloud_ok else local_only(self.stt)
+                if stt is None:
+                    raise STTError("no speech-to-text engine on this PC (the cloud transfer gate is off), or none set")
+                if stt is not local_only(stt):
+                    log.info("cloud transfer may happen: capture=%s to=%s", cid, getattr(stt, "name", "?"))
                 self._state(ws, cid, "transcribing")
-                self.broker.publish(ws, "stt.transcribing", {"capture_id": cid, "engine": getattr(self.stt, "name", None)},
+                self.broker.publish(ws, "stt.transcribing", {"capture_id": cid, "engine": getattr(stt, "name", None)},
                                     author=author)
                 meta = loads(cap["transcript"], {}) or {}
-                t = self.stt.transcribe(Path(cap["audio_path"]).read_bytes(), mime=meta.get("mime") or "audio/ogg",
+                t = stt.transcribe(Path(cap["audio_path"]).read_bytes(), mime=meta.get("mime") or "audio/ogg",
                                         lang_hint=cap["lang_hint"], keyterms=self.keyterms(ws, view))
                 transcript_text = t.text
                 self.db.update("captures", {"id": cid}, {"text": t.text, "transcript": t.as_dict(), "lang": t.language})
@@ -299,7 +353,8 @@ class Brain:
             events = [e for ev in text.split_events(clean) for e in text.expand_ranges(ev, known_numbers)]
             captured_at = parse_iso(cap["recorded_at"]) or datetime.now(timezone.utc)
             results, review, routers_used = [], 0, set()
-            spine = [{"node_id": n["id"], "path": self.graph.path_titles(n["id"]), "kind": n["kind"]}
+            spine = [{"node_id": n["id"], "path": self.graph.path_titles(n["id"]), "kind": n["kind"],
+                      "restricted": (n.get("eff_level") or EMPLOYEE) < EMPLOYEE}
                      for n in self.graph.spine(ws) if view.rows(n["id"])]
             profile = {r["key"]: loads(r["value"], r["value"]) for r in
                        self.db.query("select key, value, visibility from profile_facts where workspace_id=?", (ws,))
@@ -339,7 +394,8 @@ class Brain:
                 ctx = RouteContext(capture_id=cid, event_index=idx, event=ev, transcript=clean, captured_at=captured_at,
                                    lang=cap["lang"] or cap["lang_hint"], candidates=cands, spine=spine,
                                    profile=profile, people=people, timezone=self.settings.timezone,
-                                   previous_node_id=previous, anchor_node_id=anchor)
+                                   previous_node_id=previous, anchor_node_id=anchor,
+                                   cloud=cloud_ok and not self._touches_restricted(cands, ev))
                 # 4 route
                 payload, router_name, errors = self.routers.route(ctx)
                 routers_used.add(router_name)
@@ -347,6 +403,17 @@ class Brain:
                 allowed = {c["node_id"] for c in cands} | {s["node_id"] for s in spine}
                 attrs = {c["node_id"]: c.get("attributes") or {} for c in cands}
                 checked = check(payload, allowed_ids=allowed, root_id=root_id, node_attrs=attrs)
+                owners_only = False
+                if not checked.gate:
+                    # POPIA s26-33: a person's health or disciplinary details are not filed where everyone sees them
+                    # without an owner deciding (restrict the branch, or file it on a restricted one)
+                    hit = text.sensitive_about(ev, [x["name"] for x in people])
+                    open_targets = [a.get("node_id") for a in checked.actions if a.get("node_id")
+                                    and (self.graph.node(a["node_id"]) or {}).get("eff_level", EMPLOYEE) >= EMPLOYEE]
+                    if hit and (open_targets or not checked.actions):
+                        checked.gate, owners_only = "sensitive", True
+                        checked.question = (f"This note names {hit[0]} with {hit[1]} details. File it only where "
+                                            f"owners see it, or restrict the branch first?")
                 row = {"capture_id": cid, "idx": idx, "text": ev,
                        "candidates": [{k: c[k] for k in ("node_id", "path", "score", "via")} for c in cands],
                        "routed": payload, "router": router_name,
@@ -355,7 +422,8 @@ class Brain:
                     # Inbox: the speaker (an owner) or a manager decides; the proposal is kept so one tap applies it
                     opts = checked.options or [{"label": c["path"], "node_id": c["node_id"]} for c in cands[:3]]
                     inbox_id = new_id()
-                    route = self._place_route(ws, principal)
+                    route = ([m.member_id for m in self._members(ws, OWNER) if m.member_id] if owners_only
+                             else self._place_route(ws, principal))
                     with self.db.tx():  # one transaction: a retry after a crash must not ask twice
                         self.db.insert("inbox", {"id": inbox_id, "workspace_id": ws, "capture_id": cid, "event_idx": idx,
                                                "question": checked.question or f'Where should this go? "{ev}"',
@@ -364,7 +432,8 @@ class Brain:
                                                             "errors": checked.errors, "router": router_name},
                                                "state": "open", "resolution": None, "created_at": now_iso(),
                                                "resolved_at": None, "kind": "place", "author_member_id": author,
-                                               "route_member_ids": route, "approver_level": held_level(principal)})
+                                               "route_member_ids": route,
+                                               "approver_level": OWNER if owners_only else held_level(principal)})
                         self._upsert_event(row, "needs_review")
                     self.broker.publish(ws, "inbox.created", {
                         "capture_id": cid, "idx": idx, "inbox_id": inbox_id, "text": ev, "reason": checked.gate,
@@ -1245,6 +1314,7 @@ class Brain:
             raise KeyError(ws)
         counts: dict[str, int] = {}
         caps = [c["id"] for c in self.db.query("select id from captures where workspace_id=?", (ws,))]
+        members = [m["id"] for m in self.db.query("select id from members where workspace_id=?", (ws,))]
         with self.db.tx():
             for cid in caps:
                 self.db.execute("delete from jobs where payload like ?", (f'%{cid}%',))
@@ -1268,11 +1338,15 @@ class Brain:
             self.db.execute("delete from sync_rejects where change like ?", (f'%"{ws}"%',))
             counts["journal"] = self.db.execute("delete from sync_changes where ws=? and op<>'D'", (ws,))
             self.db.execute("update sync_changes set row=null where ws=? and op='D' and row is not null", (ws,))
+        for m in members:  # what each member's own companion learned (POPIA: no copy left behind)
+            self.companion.forget(ws, None, [], wipe=m)
+        self.companion.forget(ws, None, [], before=time.time() + 1)
         audio = Path(self.settings.audio_dir) / ws
         if audio.is_dir():
             import shutil
             shutil.rmtree(audio, ignore_errors=True)
         self.broker.publish(ws, "workspace.deleted", {"counts": counts})
+        logging.getLogger("notecad.security").warning("workspace deleted ws=%s counts=%s", ws, counts)
         return {"deleted": ws, "counts": counts}
 
     def onboard(self, ws: str, answer: str, apply: bool = True) -> dict:

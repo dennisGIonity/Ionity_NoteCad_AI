@@ -46,7 +46,8 @@ export async function joinFromLink(link: string, confirm: (text: string) => bool
   const j = parseJoinLink(link)
   if (!j) return 'That is not a NoteCad invite link'
   try {
-    const pv = await fetch(`${j.url}/api/v1/join?c=${encodeURIComponent(j.code)}`)
+    const pv = await fetch(`${j.url}/api/v1/join/preview`, {  // the code in the body, never in a URL
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: j.code }) })
     const info = await pv.json()
     if (!pv.ok) return info.detail ?? `The brain answered ${pv.status}`
     const where = info.scope?.length ? ` (${info.scope.join(', ')})` : ''
@@ -134,8 +135,12 @@ export const api = {
   resolveAlert: (id: string) => brain<unknown>(`/alerts/${id}/resolve`, { method: 'POST' }),
   // POPIA: the privacy notice and how long things are kept
   privacy: (ws: string) => brain<PrivacyNotice>(`/workspaces/${ws}/privacy`),
-  acceptPrivacy: (ws: string, contact: string, retention: Retention) =>
-    brain<PrivacyNotice>(`/workspaces/${ws}/privacy`, { method: 'PUT', body: JSON.stringify({ contact, retention }) }),
+  acceptPrivacy: (ws: string, body: { contact: string; retention: Retention; officer?: string; cloud?: boolean }) =>
+    brain<PrivacyNotice>(`/workspaces/${ws}/privacy`, { method: 'PUT', body: JSON.stringify(body) }),
+  subjectExport: (ws: string, id: string) => brain<Record<string, unknown>>(`/workspaces/${ws}/subjects/${id}/export`),
+  subjectErase: (ws: string, id: string) =>
+    brain<{ erased: string; counts: Record<string, number>; kept: string[] }>(
+      `/workspaces/${ws}/subjects/${id}/erase?confirm=${encodeURIComponent(id)}`, { method: 'POST' }),
   ackPrivacy: (ws: string) => brain<PrivacyNotice>(`/workspaces/${ws}/privacy/ack`, { method: 'POST' }),
   // ADR 0014: who this app acts as, and the people of the business
   me: (ws: string) => brain<Me>(`/workspaces/${ws}/me`),

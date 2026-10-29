@@ -29,6 +29,7 @@ from pathlib import Path
 from .common import now_iso
 
 log = logging.getLogger("notecad.retention")
+DAY = 86400
 
 KEYS = ("audio_days", "transcript_days", "log_days")
 # what the privacy notice suggests; the owner picks (None keeps)
@@ -82,7 +83,7 @@ def purge(brain, ws: str, now: float | None = None) -> dict:
     """Apply one workspace's periods now. Returns what went, by kind."""
     db = brain.db
     days = read(db, ws)
-    out = {"audio": 0, "transcripts": 0, "log": 0, "journal": 0}
+    out = {"audio": 0, "transcripts": 0, "companion": 0, "log": 0, "journal": 0}
     if not any(days.values()):
         return out
     if days["audio_days"]:
@@ -104,6 +105,10 @@ def purge(brain, ws: str, now: float | None = None) -> dict:
                 db.update("captures", {"id": cid}, {"text": None, "transcript": None})
                 db.execute("update capture_events set text='' where capture_id=?", (cid,))
         out["transcripts"] = len(ids)
+        # what the companions learned from those notes ages out with them
+        members = [r["id"] for r in db.query("select id from members where workspace_id=?", (ws,))]
+        got = brain.companion.forget(ws, None, members, before=time.time() - days["transcript_days"] * DAY)
+        out["companion"] = sum(got.values()) if got else 0
     if days["log_days"]:
         cut = cutoff(days["log_days"], now)
         with db.tx():
@@ -114,6 +119,14 @@ def purge(brain, ws: str, now: float | None = None) -> dict:
             n += db.execute("delete from notifications where workspace_id=? and created_at < ?", (ws, cut))
         out["log"] = n
     out["journal"] = compact_journal(db, ws)
+    # a Supabase hub keeps its own journal: the worker that syncs with it compacts that one too
+    hub = getattr(getattr(brain, "sync", None), "peer", None)
+    hub_db = getattr(getattr(hub, "journal", None), "db", None)
+    if hub_db is not None and hub_db is not db:
+        try:
+            out["journal"] += compact_journal(hub_db, ws)
+        except Exception:  # noqa: BLE001 - the hub may be unreachable now; the next run tries again
+            log.warning("retention: the hub journal of %s could not be compacted now", ws)
     if any(out.values()):
         log.info("retention %s: %s", ws, out)
     return out

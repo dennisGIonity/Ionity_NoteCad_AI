@@ -4,7 +4,7 @@
 // People & seats (ADR 0014, decision 27). An owner adds seats, invites (a QR of a one-time join link), changes roles
 // and branches, and removes people and devices. A manager invites employees into free seats, inside their branches,
 // and sees their team. The brain checks every one of these again; this panel only offers what GET /me allows.
-import { Copy, Loader2, ShieldCheck, Smartphone, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Copy, Download, Eraser, Loader2, ShieldCheck, Smartphone, Trash2, UserPlus, Users, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../lib/api'
@@ -14,6 +14,14 @@ import type { Device, Invite, Member, Seat } from '../lib/types'
 import { ago, cls } from '../lib/ui'
 
 const ROLE = ['', 'Owner', 'Manager', 'Employee']
+
+/** Saves what the brain sent as a file on this computer (the person's own copy). */
+function download(name: string, data: unknown) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 export function PeoplePanel({ onClose }: { onClose: () => void }) {
   const ws = useApp((s) => s.ws)
@@ -149,6 +157,16 @@ export function PeoplePanel({ onClose }: { onClose: () => void }) {
                       <button type="button" aria-label={`Remove ${m.display_name}`} onClick={() => {
                         if (window.confirm(`Remove ${m.display_name}? Their phones stop at once and wipe their copy; the seat is free again.`)) void run(m.id, () => api.revokeMember(m.id))
                       }} className="rounded p-1 text-slate-400 hover:bg-white/10"><Trash2 className="size-3.5" /></button>
+                    )}
+                    {(owner || m.id === me?.member_id) && (
+                      <button type="button" aria-label={`Copy of ${m.display_name}'s information`} title="A copy of everything about them (POPIA s23)"
+                        onClick={() => void run(`x${m.id}`, async () => download(`${m.display_name}.json`, await api.subjectExport(ws, m.id)))}
+                        className="rounded p-1 text-slate-400 hover:bg-white/10"><Download className="size-3.5" /></button>
+                    )}
+                    {owner && m.id !== me?.member_id && (
+                      <button type="button" aria-label={`Erase ${m.display_name}`} title="Erase this person (POPIA s24)" onClick={() => {
+                        if (window.prompt(`Erase ${m.display_name}? Their recordings go, their name becomes [removed] everywhere, their phones are wiped. The activity log keeps "Removed member". Type ERASE to go ahead.`) === 'ERASE') void run(`e${m.id}`, () => api.subjectErase(ws, m.id))
+                      }} className="rounded p-1 text-rose-300 hover:bg-white/10"><Eraser className="size-3.5" /></button>
                     )}
                   </div>
                   {devices.filter((d) => d.member_id === m.id).map((d) => (

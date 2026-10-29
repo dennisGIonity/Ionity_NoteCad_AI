@@ -10,7 +10,8 @@ const base: PrivacyNotice = {
   version: 1, business: 'Highveld Farm', owners: ['Dennis'], contact: null, accepted_at: null,
   retention: { audio_days: null, transcript_days: null, log_days: null }, retention_text: '',
   recommended: { audio_days: 90, transcript_days: 365, log_days: 365 },
-  cloud: { claude: false, deepgram: false, sync: null }, my_ack_at: null, is_owner: true,
+  cloud: { claude: false, deepgram: false, allowed: false, available: { claude: false, deepgram: false }, sync: null },
+  my_ack_at: null, is_owner: true, officer: 'Dennis', officer_named: false,
 }
 
 describe('when the privacy notice must be shown', () => {

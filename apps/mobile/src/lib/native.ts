@@ -21,6 +21,7 @@ export interface NativeItem {
 interface NoteCadPlugin {
   configure(o: { url: string; token: string; ws: string; pin: string }): Promise<void>
   trust(o: { url: string; pin: string }): Promise<void>
+  token(): Promise<{ token: string }>
   overlayAllowed(): Promise<{ allowed: boolean }>
   openOverlaySettings(): Promise<void>
   startBubble(): Promise<{ started: boolean; overlay: boolean }>
@@ -42,6 +43,10 @@ const hasPlugin = isNative && Capacitor.isPluginAvailable('NoteCad')
 export const Native = {
   available: hasPlugin,
   configure: (o: { url: string; token: string; ws: string; pin: string }) => (hasPlugin ? plugin.configure(o) : Promise.resolve()),
+  /** This phone's token from the Keystore-encrypted vault (Android); '' elsewhere. */
+  token: async () => (hasPlugin && platform === 'android' ? (await plugin.token()).token : ''),
+  /** On Android the token lives in the native vault, not in the web layer's storage. */
+  vaulted: hasPlugin && platform === 'android',
   /** Trust this brain's own certificate (its SHA-256 from the QR) before the first request to it: HTTPS on the farm
    * network with no certificate authority (POPIA review, fix 4). A no-op in a browser. */
   trust: (url: string, pin: string | undefined) =>

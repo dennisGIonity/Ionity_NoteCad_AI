@@ -11,9 +11,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Protocol
 
@@ -98,6 +99,9 @@ class RouteContext:
     timezone: str = "Africa/Johannesburg"
     previous_node_id: str | None = None  # where the previous event of this note went ("...en vra Sipho om dit reg te maak")
     anchor_node_id: str | None = None  # the node open on the owner's map while recording (context-anchored capture)
+    # POPIA s72: a router that sends the note abroad (Claude) is used only when the owner turned the cloud transfer on
+    # for this workspace and nothing in the note's candidates is on a restricted branch. Off unless said otherwise.
+    cloud: bool = False
 
 
 class Router(Protocol):
@@ -122,6 +126,8 @@ def _ctx_text(ctx: RouteContext) -> str:
 
 
 class ClaudeRouter:
+    cloud = True  # sends the note to Anthropic (USA): POPIA s72, behind the workspace's cloud transfer gate
+
     def __init__(self, model: str = "claude-sonnet-5-5", api_key: str | None = None, timeout: float = 30.0,
                  transport=None):
         self.model = model
@@ -491,8 +497,17 @@ class RouterChain:
             if sure is not None:
                 return sure, "rules:sure", errors
         for r in self.routers:
+            rctx = ctx
+            if getattr(r, "cloud", False):
+                if not ctx.cloud:
+                    continue  # the cloud transfer gate is off for this note: it stays on this PC
+                # only what everyone may see goes: restricted main areas are left out of the spine
+                rctx = replace(ctx, spine=[s for s in ctx.spine if not s.get("restricted")],
+                               candidates=[c for c in ctx.candidates if not c.get("restricted")])
+                logging.getLogger("notecad.security").info("cloud transfer capture=%s event=%s to=%s",
+                                                           ctx.capture_id, ctx.event_index, r.name)
             try:
-                return r.route(ctx), r.name, errors
+                return r.route(rctx), r.name, errors
             except Exception as ex:
                 errors.append(f"{r.name}: {type(ex).__name__}: {ex}"[:300])
         raise RuntimeError("all routers failed: " + " | ".join(errors))

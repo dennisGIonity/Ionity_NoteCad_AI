@@ -46,6 +46,8 @@ interface PhoneState {
   inbox: InboxItem[]
   privacy: Privacy | null
   ackPrivacy(): Promise<void>
+  /** POPIA s23: a copy of everything the business holds about this member. */
+  myCopy(): Promise<Record<string, unknown> | null>
   decide(id: string, decision: 'approve' | 'reject', reason?: string): Promise<string | null>
   invite(name: string, role: 'employee' | 'manager'): Promise<{ link?: string; error?: string }>
   init(): Promise<void>
@@ -66,7 +68,7 @@ interface PhoneState {
 export interface Me { member_id: string | null; name: string | null; level: number; role: string; scopes: string[];
   capabilities: Record<string, string> }
 /** POPIA: what the business's privacy notice says, and whether this member has read it (GET .../privacy). */
-export interface Privacy { business: string; owners: string[]; contact: string | null; retention_text: string;
+export interface Privacy { business: string; owners: string[]; contact: string | null; retention_text: string; officer: string | null;
   cloud: { claude: boolean; deepgram: boolean; sync: string | null }; my_ack_at: string | null; is_owner: boolean }
 export interface InboxItem { id: string; kind: string; question: string; event_text: string | null; author_member_id: string | null }
 
@@ -162,6 +164,11 @@ export const usePhone = create<PhoneState>((set, get) => ({
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { void reload(set); void get().drain() } })
     void Native.on('outboxChanged', () => { void reload(set) })
     void Native.on('launchAction', (d) => { if (d.action === 'record') void get().toggleRecording() })
+    const was = get().pairing
+    if (was && Native.vaulted) {
+      if (was.token) await savePairing(was)  // stored before the vault: move the token into it
+      else set({ pairing: { ...was, token: await Native.token().catch(() => '') } })
+    }
     const action = await Native.consumeLaunchAction().catch(() => null)  // iOS Action Button / Siri opened the app
     if (get().pairing) {
       void get().refresh()
@@ -208,7 +215,8 @@ export const usePhone = create<PhoneState>((set, get) => ({
     if (!j) return
     try {
       await Native.trust(j.url, j.pin)
-      const r = await fetch(`${j.url}/api/v1/join?c=${encodeURIComponent(j.code)}`)
+      const r = await fetch(`${j.url}/api/v1/join/preview`, {  // the code in the body, never in a URL
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: j.code }) })
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status}`)
       set({ joinPreview: (await r.json()) as JoinPreview })
     } catch (e) {
@@ -244,7 +252,17 @@ export const usePhone = create<PhoneState>((set, get) => ({
   async ackPrivacy() {
     const p = get().pairing
     if (!p) return
-    try { set({ privacy: await call<Privacy>(p, `/workspaces/${p.ws}/privacy/ack`, { method: 'POST' }) }) } catch { /* next time */ }
+    try { set({ privacy: await call<Privacy>(p, `/workspaces/${p.ws}/privacy/ack`, { method: 'POST' }) }) } catch { return }
+    // notes recorded before reading it were refused (POPIA s18): they go now
+    await savePairing(p)  // the native outbox gets another go too
+    await outbox.unpark()
+    void get().drain()
+  },
+
+  async myCopy() {
+    const p = get().pairing
+    if (!p?.member) return null
+    try { return await call<Record<string, unknown>>(p, `/workspaces/${p.ws}/subjects/${p.member.id}/export`) } catch { return null }
   },
 
   async decide(id, decision, reason) {

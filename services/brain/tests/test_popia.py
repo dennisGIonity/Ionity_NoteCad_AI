@@ -197,7 +197,8 @@ def test_the_owner_sets_the_notice_and_every_member_reads_it(people_farm):
     n = c.get(f"/api/v1/workspaces/{ws}/privacy").json()  # this PC: the first owner
     assert n["is_owner"] and n["accepted_at"] is None and n["contact"] is None
     assert n["retention_text"] == "recordings until deleted, transcripts until deleted, activity log until deleted"
-    assert n["cloud"] == {"claude": False, "deepgram": False, "sync": None}
+    assert n["cloud"] == {"claude": False, "deepgram": False, "allowed": False, "sync": None,
+                          "available": {"claude": False, "deepgram": False}}  # the gate is off by default
     assert c.put(f"/api/v1/workspaces/{ws}/privacy", json={"retention": {"audio_days": 90}}).status_code == 400
     assert c.put(f"/api/v1/workspaces/{ws}/privacy", json={"contact": "x", "retention": {"audio_days": 0}}).status_code == 400
     n = c.put(f"/api/v1/workspaces/{ws}/privacy", json={"contact": "Dennis, 082 000 0000",
