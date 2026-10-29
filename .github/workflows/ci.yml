@@ -102,7 +102,7 @@ jobs:
           npm ci --include=dev
           npm run lint
           npm test | tee vitest.txt
-          echo "::notice title=Phone Vitest::$(grep -E '^ +Tests' vitest.txt | tr -s ' ')"
+          echo "::notice title=Phone Vitest::$(sed -E 's/\x1b\[[0-9;]*m//g' vitest.txt | grep -E '^ *Tests +[0-9]' | tr -s ' ')"
           npm run build
           npx cap sync android
       - name: APK and unit tests
@@ -139,7 +139,7 @@ jobs:
           npm ci --include=dev
           npm run lint
           npm test | tee vitest.txt
-          echo "::notice title=Desktop Vitest::$(grep -E '^ +Tests' vitest.txt | tr -s ' ')"
+          echo "::notice title=Desktop Vitest::$(sed -E 's/\x1b\[[0-9;]*m//g' vitest.txt | grep -E '^ *Tests +[0-9]' | tr -s ' ')"
           npm run build   # dist first: tauri::generate_context! reads it at compile time
       - name: cargo check
         working-directory: apps/desktop/src-tauri
