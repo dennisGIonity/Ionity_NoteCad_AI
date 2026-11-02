@@ -11,7 +11,7 @@ Newest phase first. Each phase: what was built, what was verified on WABAKIPI, w
 
 ## Test check after the rename: nothing broken, a game on the GPU (2 November 2026)
 
-Full matrix re-run on `0e4ac11` (the IBMM rename, the last commit). Details: `docs\perf	est-run-2026-11-02.md`.
+Full matrix re-run on `0e4ac11` (the IBMM rename, the last commit). Details: `docs\perf\test-run-2026-11-02.md`.
 
 **What broke.** Only the live Playwright run: 4 of 26 failed (two typed-note flows, the node drawer's companion reply,
 the folded-branch badge). Every unit suite, lint, pyright, the three generator checks and CI were green.
