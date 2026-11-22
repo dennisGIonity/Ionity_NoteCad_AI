@@ -13,7 +13,11 @@ const EDGE = process.env.NC_EDGE_URL ?? 'http://127.0.0.1:8789'
 const WAV = fileURLToPath(new URL('../../../data/samples/showcase/showcase_3.wav', import.meta.url))
 
 test.use({
-  launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${WAV}`] },
+  launchOptions: {
+    // keep the config's executablePath (NC_E2E_BROWSER_PATH): test.use replaces launchOptions as a whole
+    ...(process.env.NC_E2E_BROWSER_PATH ? { executablePath: process.env.NC_E2E_BROWSER_PATH } : {}),
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${WAV}`],
+  },
   permissions: ['microphone'],
 })
 

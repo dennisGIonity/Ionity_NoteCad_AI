@@ -89,13 +89,13 @@ def gemma(ollama: str, model: str, runs: int) -> dict:
             "load_ms_first": round(load[0], 1), "runs": runs}
 
 
-def whisper(compute: str, beam: int, vad: bool, batched: int) -> dict:
+def whisper(compute: str, beam: int, vad: bool, batched: int, model: str = "large-v3-turbo") -> dict:
     from faster_whisper import BatchedInferencePipeline, WhisperModel
     from notecad_brain import stt as stt_mod
     stt_mod._cuda_dll_dirs()
     files = sorted((ROOT / "data" / "samples" / "showcase").glob("*.wav")) + sorted((ROOT / "data" / "samples").glob("*.wav"))
     t = time.perf_counter()
-    m = WhisperModel("large-v3-turbo", device="cuda", compute_type=compute, download_root=str(ROOT / "models" / "whisper"))
+    m = WhisperModel(model, device="cuda", compute_type=compute, download_root=str(ROOT / "models" / "whisper"))
     load_s = time.perf_counter() - t
     runner = BatchedInferencePipeline(m) if batched else m
     audio_s = proc_s = 0.0
@@ -154,6 +154,7 @@ def main() -> None:
     ap.add_argument("--beam", type=int, default=5)
     ap.add_argument("--vad", action="store_true")
     ap.add_argument("--batched", type=int, default=0)
+    ap.add_argument("--whisper-model", default="large-v3-turbo", help="e.g. large-v3 (in models\\whisper)")
     ap.add_argument("--out")
     a = ap.parse_args()
     only = set(a.only.split(","))
@@ -165,7 +166,7 @@ def main() -> None:
     if "gemma" in only:
         res["gemma"] = gemma(a.ollama, a.model, 5)
     if "whisper" in only:
-        res["whisper"] = whisper(a.compute, a.beam, a.vad, a.batched)
+        res["whisper"] = {"model": a.whisper_model, **whisper(a.compute, a.beam, a.vad, a.batched, a.whisper_model)}
     text = json.dumps(res, indent=2)
     print(text)
     if a.out:

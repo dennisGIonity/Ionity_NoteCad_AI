@@ -9,7 +9,8 @@ import { expect, type APIRequestContext, type Browser, test } from '@playwright/
 
 const BRAIN = process.env.NC_BRAIN_URL ?? 'http://127.0.0.1:8788'
 const WS = process.env.NC_E2E_WS ?? 'roles-showcase'
-const LOG = new URL('../../../data/brain/logs/api.log', import.meta.url)
+// the brain's access log; NC_BRAIN_LOG when the brain keeps its data elsewhere (keyless_stack.sh: <data>/brain/logs)
+const LOG = process.env.NC_BRAIN_LOG ?? new URL('../../../data/brain/logs/api.log', import.meta.url)
 const api = `${BRAIN}/api/v1`
 
 async function seatAndInvite(request: APIRequestContext, name: string) {

@@ -12,7 +12,10 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: process.env.NC_APP_URL ?? 'http://127.0.0.1:8788/app/',
-    channel: 'msedge',
+    // WABAKIPI: the installed Edge (default). Linux / CI: NC_E2E_CHANNEL=chromium (the bundled Playwright Chromium)
+    channel: process.env.NC_E2E_CHANNEL ?? 'msedge',
+    // a Chromium already on the machine when its version differs from this Playwright's (cloud sessions)
+    ...(process.env.NC_E2E_BROWSER_PATH ? { launchOptions: { executablePath: process.env.NC_E2E_BROWSER_PATH } } : {}),
     viewport: { width: 1440, height: 900 },
     colorScheme: 'dark',  // the usual look; the light-mode test switches explicitly
     trace: 'retain-on-failure',
