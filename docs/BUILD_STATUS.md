@@ -9,6 +9,40 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## Phase 6 from a clone: keyless stack, every e2e spec on CI, WABAKIPI kit (22 November 2026)
+
+Status: **built and tested from the repo, awaiting WABAKIPI verification** (`tools\verify_phase6.ps1`). A cloud
+session (Linux, no GPU, no vault; `docs\perf\env-cloud.md`) did the parts of the Phase 6 brief that can be proven
+from a clone. Phase 6 itself was built and verified on WABAKIPI on 28 October 2026 (below). ADR 0013 addendum.
+
+**Broken from a clone, fixed**
+
+| What | Cause | Fix | Proof |
+|---|---|---|---|
+| pyright: 33 errors | only with psycopg installed (CI's `[postgres]` extra): its stubs reject str SQL | the connection typed `Any` (`db.py`); `faster_whisper` imports marked optional | pyright 0 errors; now a CI step with ruff |
+| e2e voice flow fails without a speech model | `NC_BRAIN_STT=none` fails every recording | `FixtureSTT` (`NC_BRAIN_STT=fixture` only) | `test_phase6_cloud.py` (3), e2e "hold Space to talk" |
+| e2e needs Edge and `data\brain` | channel and log path fixed in the specs | `NC_E2E_CHANNEL`, `NC_E2E_BROWSER_PATH`, `NC_BRAIN_LOG` (defaults unchanged) | 26/26 in Chromium |
+| No line-ending rule | no `.gitattributes` | `* text=auto`, LF for `*.sh` and `gradlew` | no file renormalised |
+
+**Built:** `services/brain/tools/keyless_stack.sh` (start, seed, stop); `tools/perf_sync.py` (two real brains over
+HTTP); `perf_probe.py --whisper-model`; the CI job "Keyless stack + Playwright"; `tools\verify_phase6.ps1`
+(backup and abort, cold/warm start, suites, showcase typed/spoken/rules, golden notes with the fast path on/off,
+Whisper variants incl. large-v3, Gemma tok/s, peak VRAM, capture to map, `-Restore`; PSScriptAnalyzer clean).
+
+**Verified (cloud)**: brain 196 passed / 1 skipped on SQLite, 298 on SQLite + Postgres 16; companion 48; ruff clean,
+pyright 0 errors on both; `gen_sync` / `gen_rls` / `popia_inventory --check` up to date; pip-audit clean; desktop
+Vitest 40, phone 10, both builds and Biome clean; Playwright 26/26 (Chromium 153, keyless stack, Sync now with the edge
+node); showcase 3/3 live and in process; golden notes rules-only 17/21 (as on WABAKIPI). Numbers:
+`docs\perf\baseline-phase6-cloud.md`: sync about 1,500 changes in 0.50 s push / 0.56 s pull; 2,000 nodes Expand
+all / Collapse all 123 / 76 ms; capture to map 285-301 ms; mind map payload at 2,000 nodes p50 200 ms.
+
+**Open**
+- On WABAKIPI: run `tools\verify_phase6.ps1` (GPU, models, real data, 60 fps panning on the real panel).
+- `npm audit` on the phone: 3 moderate advisories in dev tooling under `@capacitor/cli` (glob, minimatch, rimraf);
+  none high or critical, nothing that ships.
+- The older scripts keep their PSScriptAnalyzer warnings (empty catch blocks, state-changing function names); not changed.
+- Still from Phase 6: code signing, the APK on a phone, iOS on a Mac, Claude routing with a key.
+
 ## POPIA action audit: every action checked, every open finding fixed (29 October 2026)
 
 `docs\compliance\popia-action-register.md` is generated from the code by `tools\popia_inventory.py` (`--check` in CI):

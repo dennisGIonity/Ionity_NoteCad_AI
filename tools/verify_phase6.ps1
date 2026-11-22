@@ -70,8 +70,11 @@ function Invoke-Logged([string]$name, [scriptblock]$block) {
   $log = Join-Path $Work "$name.log"
   $ErrorActionPreference = "Continue"   # Windows PowerShell 5.1 turns a native command's stderr into an error under Stop
   $global:LASTEXITCODE = 0
-  $out = & $block 2>&1 | ForEach-Object { "$_" }
+  $raw = @(& $block 2>&1)
   $code = $LASTEXITCODE
+  # a program that is not there is only an error record under Continue, with no exit code: count it as a failure
+  if (@($raw | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] -and $_.FullyQualifiedErrorId -like "CommandNotFoundException*" }).Count) { $code = 127 }
+  $out = @($raw | ForEach-Object { "$_" })
   $out | Set-Content -Path $log -Encoding UTF8
   return @{ Code = $code; Text = ($out -join "`n"); Log = $log }
 }
@@ -79,12 +82,12 @@ function Read-Json([string]$path) {
   if (-not (Test-Path $path)) { return $null }
   try { return Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
 }
-function Stop-Ibmm { & powershell -ExecutionPolicy Bypass -File $Start -Stop | Out-Null }
-function Stop-Ollama {
+function Invoke-IbmmStop { & powershell -ExecutionPolicy Bypass -File $Start -Stop | Out-Null }
+function Invoke-OllamaStop {
   Get-Process ollama, "ollama app", ollama_llama_server -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   for ($i = 0; $i -lt 50 -and (Test-Port 11434); $i++) { Start-Sleep -Milliseconds 200 }
 }
-function Start-Ibmm([string[]]$extra) {
+function Invoke-IbmmStart([string[]]$extra) {
   $t = Get-Date
   & powershell -ExecutionPolicy Bypass -File $Start -NoOpen @extra | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
   $ok = (Test-Port 8788) -and (Test-Port 8787)
@@ -111,7 +114,7 @@ if ($Restore) {
   if (-not [System.IO.Path]::IsPathRooted($from)) { $from = Join-Path $Root $from }
   if (-not (Test-Path (Join-Path $from "brain"))) { Write-Host "  $from is not an IBMM data backup (no brain folder)" -ForegroundColor Red; exit 1 }
   Step "Stopping IBMM"
-  Stop-Ibmm
+  Invoke-IbmmStop
   $keep = Join-Path $Archive "pre-restore-$Stamp"
   Step "Keeping what is in data\ now: $keep"
   try { $k = Copy-DataTo $keep } catch { Write-Host "  $($_.Exception.Message): nothing restored" -ForegroundColor Red; exit 1 }
@@ -123,12 +126,15 @@ if ($Restore) {
   exit 0
 }
 
+foreach ($need in @($Py, $Start)) {
+  if (-not (Test-Path $need)) { Write-Host "  $need is missing: set up IBMM first (CLAUDE.md). Nothing was changed." -ForegroundColor Red; exit 1 }
+}
 New-Item -ItemType Directory -Force $Work | Out-Null
 $t0 = Get-Date
 
 # ------------------------------------------------------------------ 1-2. stop, back up (abort if the copy fails)
 Step "[1/7] Stopping IBMM"
-Stop-Ibmm
+Invoke-IbmmStop
 Step "[2/7] Backing up data\"
 $Backup = Join-Path $Archive "pre-phase6-$Stamp"
 try {
@@ -158,14 +164,14 @@ if (-not $SkipInstall) {
   }
 }
 if ($SkipStartTiming) {
-  $s = Start-Ibmm @("-Rebuild", "-Showcase")
+  $s = Invoke-IbmmStart @("-Rebuild", "-Showcase")
   Add-Row "Start (untimed)" "" $(if ($s.Ok) { "OK" } else { "FAIL" }) "$($s.Seconds) s with -Rebuild -Showcase"
 } else {
-  Stop-Ollama   # a cold start: Ollama and the models load from disk
-  $cold = Start-Ibmm @("-Rebuild", "-Showcase")
+  Invoke-OllamaStop   # a cold start: Ollama and the models load from disk
+  $cold = Invoke-IbmmStart @("-Rebuild", "-Showcase")
   Add-Row "Cold start (-Rebuild -Showcase)" "was 37 s" $(if ($cold.Ok) { "INFO" } else { "FAIL" }) "$($cold.Seconds) s (includes the UI rebuild)"
-  Stop-Ibmm
-  $warm = Start-Ibmm @("-Showcase")
+  Invoke-IbmmStop
+  $warm = Invoke-IbmmStart @("-Showcase")
   $st = "FAIL"; if ($warm.Ok) { $st = $(if ($warm.Seconds -lt 20) { "OK" } else { "WARN" }) }
   Add-Row "Warm start (-Showcase)" "< 20 s" $st "$($warm.Seconds) s"
 }
@@ -206,7 +212,7 @@ Pop-Location
 # ------------------------------------------------------------------ 4b. showcase and golden notes
 Step "[5/7] Showcase and golden notes"
 Push-Location $Brain
-function Run-Field([string]$name, [string[]]$fargs, [hashtable]$envs) {
+function Invoke-FieldTest([string]$name, [string[]]$fargs, [hashtable]$envs) {
   $saved = @{}
   foreach ($k in $envs.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $envs[$k]) }
   try {
@@ -217,10 +223,10 @@ function Run-Field([string]$name, [string[]]$fargs, [hashtable]$envs) {
     foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
   }
 }
-$typed = Run-Field "showcase-typed" @("--showcase", "--routers", "local,rules", "--embed", "openai") @{}
+$typed = Invoke-FieldTest "showcase-typed" @("--showcase", "--routers", "local,rules", "--embed", "openai") @{}
 $line = ($typed.Text -split "`n" | Where-Object { $_ -match "^showcase" } | Select-Object -Last 1)
 Add-Row "Showcase typed (Gemma + rules)" "3/3" $(if ($typed.Code -eq 0) { "OK" } else { "FAIL" }) "$line; times in $($typed.Log)"
-$rules = Run-Field "showcase-rules" @("--showcase", "--routers", "rules") @{}
+$rules = Invoke-FieldTest "showcase-rules" @("--showcase", "--routers", "rules") @{}
 $line = ($rules.Text -split "`n" | Where-Object { $_ -match "^showcase" } | Select-Object -Last 1)
 Add-Row "Showcase rules only" "3/3" $(if ($rules.Code -eq 0) { "OK" } else { "FAIL" }) "$line"
 $samples = Join-Path $Data "samples\showcase"
@@ -235,7 +241,7 @@ foreach ($v in @(@{ Name = "golden-fastpath-on";  Env = @{ NC_BRAIN_RULES_FAST_P
                  @{ Name = "golden-fastpath-off"; Env = @{ NC_BRAIN_RULES_FAST_PATH = "0" } },
                  @{ Name = "golden-rules-only";   Env = @{} })) {
   $fa = $(if ($v.Name -eq "golden-rules-only") { @("--routers", "rules") } else { @("--routers", "local,rules", "--embed", "openai") })
-  $g = Run-Field $v.Name $fa $v.Env
+  $g = Invoke-FieldTest $v.Name $fa $v.Env
   if ($g.Json) {
     $golden += [pscustomobject]@{ Variant = $v.Name; Right = "$($g.Json.right_first_time)/$($g.Json.events)"; Percent = $g.Json.percent; Seconds = $g.Json.seconds }
     $st = $(if ($v.Name -eq "golden-rules-only") { "INFO" } elseif ($g.Json.percent -ge 85) { "OK" } else { "WARN" })
