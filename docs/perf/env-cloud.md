@@ -25,7 +25,7 @@ compare before and after on this same machine and are **not WABAKIPI figures** (
 | Java | OpenJDK 21.0.13 |
 | Rust | 1.97.0 (no MSVC: the Tauri window is still built on CI's Windows runner) |
 | Chromium | Chrome for Testing 153.0.8010.12 (preinstalled, `/opt/pw-browsers/chromium`); Playwright 1.64.1 wants build 1248, so `NC_E2E_BROWSER_PATH` points at the one on the machine |
-| pwsh / PSScriptAnalyzer | absent (see the PR for whether they could be installed) |
+| pwsh / PSScriptAnalyzer | pwsh 7.5.4 with PSScriptAnalyzer 1.25.0, installed for this run to lint `tools/verify_phase6.ps1` (Write-Host excluded) |
 | Ollama | absent: no models, keyless only |
 | Android SDK | absent: the APK and Android unit tests stay on CI |
 
@@ -33,7 +33,7 @@ compare before and after on this same machine and are **not WABAKIPI figures** (
 
 FastAPI 0.165.0, Starlette 1.10.0, Pydantic 2.14.4, uvicorn 0.54.0, numpy 2.5.5, httpx 0.28.1, RapidFuzz 3.14.6,
 jsonschema 4.26.0, psycopg 3.3.9, cryptography 50.0.2, python-multipart 0.0.34; pytest 9.2.0, ruff 0.17.6,
-pyright 1.1.414, pip-audit 2.10.1. faster-whisper is not installed (the `[whisper]` extra; no GPU).
+pyright 1.1.414 (both now pinned in the brain's `dev` extra), pip-audit 2.10.1. faster-whisper is not installed (the `[whisper]` extra; no GPU).
 
 ## Node packages (from the lockfiles, `npm ci --include=dev`)
 

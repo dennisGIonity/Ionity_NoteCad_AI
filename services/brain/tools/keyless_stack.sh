@@ -5,7 +5,7 @@
 #
 # The stack without keys, models or a GPU, for a clone on Linux (cloud sessions, CI). WABAKIPI uses
 # services\start_notecad.ps1 instead; this script only mirrors the env vars that start_brain.ps1 sets.
-#   tools/keyless_stack.sh start [DATA_DIR]   brain :8788 (rules router, no STT, hash vectors), companion :8787,
+#   tools/keyless_stack.sh start [DATA_DIR]   brain :8788 (rules router, FixtureSTT, hash vectors), companion :8787,
 #                                             Edge AI Node :8789 (hub only) as the brain's sync target
 #   tools/keyless_stack.sh seed  [DATA_DIR]   showcase (3 notes, rules), roles-showcase, perf-2000
 #   tools/keyless_stack.sh stop  [DATA_DIR]
@@ -18,9 +18,17 @@ root="$(cd "$here/../.." && pwd)"
 data="${2:-${NC_KEYLESS_DATA:-$root/data/keyless}}"
 py="${PY:-$here/.venv/bin/python}"
 mkdir -p "$data/brain/logs" "$data/edge-node/logs" "$data/companion"
+data="$(cd "$data" && pwd)"   # absolute: the subshells below cd elsewhere before they use it
 
-wait_up() {  # url, name
-  for _ in $(seq 1 120); do curl -fsS "$1" >/dev/null 2>&1 && { echo "  $2 up: $1"; return 0; }; sleep 0.5; done
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+wait_up() {  # url, name: up only if OUR process answers (a server already on the port must not count)
+  local pid; pid="$(cat "$data/$2.pid")"
+  for _ in $(seq 1 120); do
+    kill -0 "$pid" 2>/dev/null || { echo "  $2 exited: see $data/$2/serve.out" >&2; return 1; }
+    curl -fsS "$1" >/dev/null 2>&1 && { echo "  $2 up: $1"; return 0; }
+    sleep 0.5
+  done
   echo "  $2 did not answer at $1" >&2; return 1
 }
 
@@ -33,6 +41,9 @@ brain_env() {  # name port
 
 case "$cmd" in
   start)
+    for p in 8787 8788 8789; do
+      if port_busy "$p"; then echo "port $p is already in use: run '$0 stop $data' first" >&2; exit 1; fi
+    done
     ( brain_env edge-node 8789; export NC_BRAIN_WORKER=0
       cd "$here"; nohup "$py" -m notecad_brain.serve --port 8789 --logs "$data/edge-node/logs" \
         >"$data/edge-node/serve.out" 2>&1 & echo $! >"$data/edge-node.pid" )
@@ -72,7 +83,10 @@ PY
     ;;
   stop)
     for n in brain companion edge-node; do
-      f="$data/$n.pid"; [ -f "$f" ] && { kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"; }
+      f="$data/$n.pid"; [ -f "$f" ] || continue
+      pid="$(cat "$f")"; kill "$pid" 2>/dev/null || true
+      for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done   # gone, ports free
+      kill -9 "$pid" 2>/dev/null || true; rm -f "$f"
     done
     ;;
   *) echo "usage: $0 start|seed|stop [DATA_DIR]" >&2; exit 2 ;;

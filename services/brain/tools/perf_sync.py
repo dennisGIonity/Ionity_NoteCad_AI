@@ -34,18 +34,27 @@ from notecad_brain.db import Database  # noqa: E402
 from seed_synthetic_farm import seed  # noqa: E402
 
 
-def wait_port(port: int, timeout: float = 60) -> None:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                return
-        except OSError:
-            time.sleep(0.2)
-    raise SystemExit(f"nothing listening on :{port} after {timeout:.0f} s")
+def port_busy(port: int) -> bool:
+    with socket.socket() as s:
+        s.settimeout(0.2)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def stop(p: subprocess.Popen) -> None:
+    """The whole process tree: on Windows the venv python.exe is a launcher with the real interpreter as its child."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True, check=False)
+    else:
+        p.terminate()
+    try:
+        p.wait(10)
+    except subprocess.TimeoutExpired:
+        p.kill()
 
 
 def start(name: str, port: int, folder: Path, target: str | None) -> subprocess.Popen:
+    if port_busy(port):  # never measure a leftover brain in place of the new one
+        raise SystemExit(f":{port} is already in use (a leftover brain?): stop it or pass --port")
     d = folder / name
     (d / "logs").mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("NC_BRAIN_", "ANTHROPIC_"))}
@@ -55,18 +64,21 @@ def start(name: str, port: int, folder: Path, target: str | None) -> subprocess.
                 "NC_BRAIN_BIND": "127.0.0.1"})
     if target:
         env["NC_BRAIN_SYNC_TARGET"] = target
+    out = open(d / "serve.out", "wb")  # noqa: SIM115 - stays open for the child's lifetime
     p = subprocess.Popen([sys.executable, "-m", "notecad_brain.serve", "--port", str(port), "--logs", str(d / "logs")],
-                         cwd=HERE.parents[1], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    wait_port(port)
-    for _ in range(100):
+                         cwd=HERE.parents[1], env=env, stdout=out, stderr=subprocess.STDOUT)
+    end = time.monotonic() + 60
+    while time.monotonic() < end:
+        if p.poll() is not None:
+            raise SystemExit(f"{name} exited with {p.returncode} before answering: see {d / 'serve.out'}")
         try:
             if httpx.get(f"http://127.0.0.1:{port}/health", timeout=2).status_code == 200:
                 return p
         except httpx.HTTPError:
             pass
         time.sleep(0.2)
-    p.terminate()
-    raise SystemExit(f"{name} on :{port} never answered /health")
+    stop(p)
+    raise SystemExit(f"{name} on :{port} never answered /health: see {d / 'serve.out'}")
 
 
 def counts(db_path: Path, ws: str) -> dict:
@@ -105,7 +117,11 @@ def main() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="ibmm-perf-sync-"))
     hub_port, desk_port = a.port + 1, a.port
     hub = start("edge-node", hub_port, tmp, None)
-    desk = start("desktop", desk_port, tmp, f"http://127.0.0.1:{hub_port}")
+    try:
+        desk = start("desktop", desk_port, tmp, f"http://127.0.0.1:{hub_port}")
+    except SystemExit:
+        stop(hub)
+        raise
     rng = random.Random(6)
     runs: list[dict] = []
     ok = True
@@ -131,11 +147,7 @@ def main() -> None:
                       f"same rows {same}, waiting {unsynced}  {'PASS' if good else 'FAIL'}")
     finally:
         for p in (desk, hub):
-            p.terminate()
-            try:
-                p.wait(10)
-            except subprocess.TimeoutExpired:
-                p.kill()
+            stop(p)
     med = {k: statistics.median(r[k] for r in runs) for k in ("push_changes", "push_ms", "pull_changes", "pull_ms")}
     print(f"median ({a.where}): push {med['push_changes']:.0f} changes {med['push_ms']:.0f} ms, "
           f"pull {med['pull_changes']:.0f} changes {med['pull_ms']:.0f} ms")

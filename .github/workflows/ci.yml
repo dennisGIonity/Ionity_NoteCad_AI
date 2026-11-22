@@ -47,15 +47,17 @@ jobs:
           cache: pip
           cache-dependency-path: services/*/pyproject.toml
       - name: Install
-        run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]" ruff pyright
+        run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]"  # dev pins ruff and pyright
       - name: ruff and pyright (brain, companion)
         # pyright sees psycopg here (the [postgres] extra), which WABAKIPI does not install
         run: |
           for d in services/brain services/companion; do
-            (cd "$d" && ruff check . && pyright --pythonpath "$(which python)" > pyright.txt 2>&1) || {
-              cat "$d/pyright.txt" 2>/dev/null
-              grep -E ' error: ' "$d/pyright.txt" 2>/dev/null | head -20 | sed 's/%/%25/g' \
-                | awk 'BEGIN { ORS = "%0A" } { print }' | sed "s|^|::error title=$d static checks::|"; echo
+            (cd "$d" && ruff check . --output-format=concise > ruff.txt 2>&1 \
+               && pyright --pythonpath "$(which python)" > pyright.txt 2>&1) || {
+              cat "$d/ruff.txt" "$d/pyright.txt" 2>/dev/null || true
+              { grep -hE ':[0-9]+:[0-9]+: ' "$d/ruff.txt" 2>/dev/null; grep -E ' error: ' "$d/pyright.txt" 2>/dev/null; } \
+                | head -20 | sed 's/%/%25/g' | awk 'BEGIN { ORS = "%0A" } { print }' \
+                | sed "s|^|::error title=$d static checks::|" || true; echo
               exit 1; }
             echo "::notice title=pyright $d::$(tail -1 "$d/pyright.txt")"
           done
@@ -151,9 +153,9 @@ jobs:
           code=0
           npx playwright test --trace retain-on-failure > pw.txt 2>&1 || code=$?
           cat pw.txt
-          sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | grep -E '^ +✘' | head -20 | sed 's/%/%25/g' \
+          sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | { grep -E '^ +✘' || true; } | head -20 | sed 's/%/%25/g' \
             | awk 'BEGIN { ORS = "%0A" } { print }' | sed 's/^/::error title=Playwright failed::/'; echo
-          echo "::notice title=Playwright (Chromium, keyless)::$(sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | grep -E '^ +[0-9]+ (passed|failed|skipped|flaky)' | tr -s ' ' | paste -sd ',')"
+          echo "::notice title=Playwright (Chromium, keyless)::$(sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | grep -E '^ +[0-9]+ (passed|failed|skipped|flaky)' | tr -s ' ' | paste -sd ',' || true)"
           exit "$code"
       - name: Stop the stack
         if: always()

@@ -82,7 +82,13 @@ function Read-Json([string]$path) {
   if (-not (Test-Path $path)) { return $null }
   try { return Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
 }
-function Invoke-IbmmStop { & powershell -ExecutionPolicy Bypass -File $Start -Stop | Out-Null }
+function Invoke-IbmmStop {
+  # start_notecad.ps1 -Stop does not wait for the processes to exit: wait until the ports close and the files are free
+  & powershell -ExecutionPolicy Bypass -File $Start -Stop | Out-Null
+  for ($i = 0; $i -lt 50 -and ((Test-Port 8788) -or (Test-Port 8787) -or (Test-Port 8789)); $i++) { Start-Sleep -Milliseconds 200 }
+  Start-Sleep -Milliseconds 500
+  return -not ((Test-Port 8788) -or (Test-Port 8787) -or (Test-Port 8789))
+}
 function Invoke-OllamaStop {
   Get-Process ollama, "ollama app", ollama_llama_server -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   for ($i = 0; $i -lt 50 -and (Test-Port 11434); $i++) { Start-Sleep -Milliseconds 200 }
@@ -114,12 +120,13 @@ if ($Restore) {
   if (-not [System.IO.Path]::IsPathRooted($from)) { $from = Join-Path $Root $from }
   if (-not (Test-Path (Join-Path $from "brain"))) { Write-Host "  $from is not an IBMM data backup (no brain folder)" -ForegroundColor Red; exit 1 }
   Step "Stopping IBMM"
-  Invoke-IbmmStop
+  if (-not (Invoke-IbmmStop)) { Write-Host "  IBMM is still running (:8787/:8788/:8789): stop it first. Nothing restored." -ForegroundColor Red; exit 1 }
   $keep = Join-Path $Archive "pre-restore-$Stamp"
   Step "Keeping what is in data\ now: $keep"
   try { $k = Copy-DataTo $keep } catch { Write-Host "  $($_.Exception.Message): nothing restored" -ForegroundColor Red; exit 1 }
   Write-Host "        $($k.Files) files, $($k.MB) MB" -ForegroundColor DarkGray
-  Get-ChildItem $Data -Force | Where-Object { $_.Name -ne "archive" } | Remove-Item -Recurse -Force
+  # data\archive and data\verify stay where they are (Copy-DataTo leaves both out of the copy as well)
+  Get-ChildItem $Data -Force | Where-Object { $_.Name -ne "archive" -and $_.Name -ne "verify" } | Remove-Item -Recurse -Force
   Step "Restoring $from"
   Get-ChildItem $from -Force | ForEach-Object { Copy-Item -Path $_.FullName -Destination $Data -Recurse -Force }
   Write-Host "  Restored. Start with: powershell -ExecutionPolicy Bypass -File services\start_notecad.ps1" -ForegroundColor Green
@@ -134,7 +141,7 @@ $t0 = Get-Date
 
 # ------------------------------------------------------------------ 1-2. stop, back up (abort if the copy fails)
 Step "[1/7] Stopping IBMM"
-Invoke-IbmmStop
+if (-not (Invoke-IbmmStop)) { Write-Host "  IBMM is still running (:8787/:8788/:8789): stop it first. Nothing was changed." -ForegroundColor Red; exit 1 }
 Step "[2/7] Backing up data\"
 $Backup = Join-Path $Archive "pre-phase6-$Stamp"
 try {
@@ -170,7 +177,7 @@ if ($SkipStartTiming) {
   Invoke-OllamaStop   # a cold start: Ollama and the models load from disk
   $cold = Invoke-IbmmStart @("-Rebuild", "-Showcase")
   Add-Row "Cold start (-Rebuild -Showcase)" "was 37 s" $(if ($cold.Ok) { "INFO" } else { "FAIL" }) "$($cold.Seconds) s (includes the UI rebuild)"
-  Invoke-IbmmStop
+  [void](Invoke-IbmmStop)
   $warm = Invoke-IbmmStart @("-Showcase")
   $st = "FAIL"; if ($warm.Ok) { $st = $(if ($warm.Seconds -lt 20) { "OK" } else { "WARN" }) }
   Add-Row "Warm start (-Showcase)" "< 20 s" $st "$($warm.Seconds) s"
@@ -190,6 +197,7 @@ if ($smi) {
     -ArgumentList @("--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits", "-lms", "500", "-f", "`"$vramLog`"")
 }
 
+try {   # nvidia-smi is stopped in the finally block below, also on Ctrl+C or an error
 # ------------------------------------------------------------------ 4a. suites
 Step "[4/7] Test suites"
 Push-Location $Brain
@@ -270,7 +278,11 @@ if (-not $Quick) {
                  @{ N = "turbo float16 beam 1";      A = @("--beam", "1") },
                  @{ N = "turbo float16 beam 5 VAD";  A = @("--vad") },
                  @{ N = "turbo float16 batched 8";   A = @("--batched", "8") })
-  if (Test-Path (Join-Path $Root "models\whisper\large-v3")) { $variants += @{ N = "large-v3 float16 beam 5"; A = @("--whisper-model", "large-v3") } }
+  # faster-whisper keeps downloads in the Hugging Face cache layout; a converted model may sit in a plain folder
+  $wd = Join-Path $Root "models\whisper"
+  if ((Test-Path (Join-Path $wd "large-v3")) -or (Test-Path (Join-Path $wd "models--Systran--faster-whisper-large-v3"))) {
+    $variants += @{ N = "large-v3 float16 beam 5"; A = @("--whisper-model", "large-v3") }
+  } else { Add-Row "Whisper large-v3 float16 beam 5" "RTF < 1" "OFF" "large-v3 not in models\whisper" }
 }
 $i = 0
 foreach ($v in $variants) {
@@ -292,7 +304,7 @@ if (-not $Quick) {
   $before = $(if (Test-Path $perf) { @(Get-Content $perf).Count } else { 0 })
   $r = Invoke-Logged "playwright-perf" { & npx.cmd playwright test e2e/perf.spec.ts e2e/fold.spec.ts -g "2,000|capture to map" }
   Pop-Location
-  $new = $(if (Test-Path $perf) { @(Get-Content $perf | Select-Object -Skip $before | ForEach-Object { $_ | ConvertFrom-Json }) } else { @() })
+  $new = $(if (Test-Path $perf) { @(Get-Content $perf | Select-Object -Skip $before | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ }) } else { @() })
   $c2m = $new | Where-Object { $_.name -eq "capture-to-map" } | Select-Object -Last 1
   if ($c2m -and $null -ne $c2m.value.redraw_ms) {
     Add-Row "Capture to map" "< 1000 ms" $(if ($c2m.value.redraw_ms -lt 1000) { "OK" } else { "FAIL" }) "redraw $($c2m.value.redraw_ms) ms after action.applied"
@@ -304,11 +316,17 @@ if (-not $Quick) {
   Add-Row "Playwright map + fold perf" "pass" $(if ($r.Code -eq 0) { "OK" } else { "FAIL" }) "see $($r.Log)"
 }
 
+} finally {
+  if ($smiProc -and -not $smiProc.HasExited) { Stop-Process -Id $smiProc.Id -Force -ErrorAction SilentlyContinue }
+}
+
 # ------------------------------------------------------------------ VRAM peak
-if ($smiProc) { Stop-Process -Id $smiProc.Id -Force -ErrorAction SilentlyContinue }
 $peak = $null; $total = $null
 if (Test-Path $vramLog) {
-  $vals = @(Get-Content $vramLog | ForEach-Object { $f = $_ -split ","; if ($f.Count -ge 2) { [pscustomobject]@{ Used = [int]$f[0].Trim(); Total = [int]$f[1].Trim() } } })
+  $vals = @(Get-Content $vramLog | ForEach-Object {
+    $f = $_ -split ","; $u = 0; $t = 0
+    if ($f.Count -ge 2 -and [int]::TryParse($f[0].Trim(), [ref]$u) -and [int]::TryParse($f[1].Trim(), [ref]$t)) { [pscustomobject]@{ Used = $u; Total = $t } }
+  })
   if ($vals.Count) { $peak = ($vals | Measure-Object Used -Maximum).Maximum; $total = $vals[0].Total }
 }
 if ($peak) {
@@ -317,7 +335,8 @@ if ($peak) {
 
 # ------------------------------------------------------------------ 5. report
 Step "[7/7] Report: docs\perf\phase6-wabakipi.md"
-$commit = (& git -C $Root rev-parse --short HEAD) 2>$null
+$g = Invoke-Logged "git-commit" { & git -C $Root rev-parse --short HEAD }
+$commit = $(if ($g.Code -eq 0 -and $g.Text) { $g.Text.Trim() } else { "unknown" })
 $md = New-Object System.Collections.ArrayList
 [void]$md.Add("<!--")
 [void]$md.Add("  Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI")
