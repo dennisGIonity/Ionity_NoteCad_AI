@@ -1,0 +1,12 @@
+# Ionity Business Mind Map (IBMM) | Ionity Global (Pty) Ltd | AEDI | Policy 986 AED | License AED 900
+# Line endings stay as they are in the repository (LF); Git converts text files on checkout as each PC is set up.
+# Shell scripts and the Gradle wrapper must keep LF even on Windows checkouts, or bash and Gradle refuse them.
+* text=auto
+*.sh text eol=lf
+gradlew text eol=lf
+*.png binary
+*.jpg binary
+*.wav binary
+*.docx binary
+*.pdf binary
+*.zip binary

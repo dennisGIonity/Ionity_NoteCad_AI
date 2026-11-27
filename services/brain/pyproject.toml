@@ -14,7 +14,8 @@ dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "httpx>=0.27", "numpy>=1.26",
 postgres = ["psycopg[binary]>=3.2"]
 whisper = ["faster-whisper>=1.2", "av>=14,<16"]  # av 16+ dropped open(metadata_errors=) that faster-whisper uses
 whisper-gpu = ["faster-whisper>=1.2", "av>=14,<16", "nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
-dev = ["pytest>=8", "httpx2>=2.16"]  # httpx2: what Starlette's test client wants now
+dev = ["pytest>=8", "httpx2>=2.16",  # httpx2: what Starlette's test client wants now
+       "ruff==0.17.6", "pyright==1.1.414"]  # pinned: a new release must not turn CI red on unchanged code
 
 [tool.setuptools]
 packages = ["notecad_brain"]

@@ -99,7 +99,8 @@ language (`WhisperSTT.PROMPTS`). FLEURS Afrikaans WER: turbo 34.7 %, large-v3 32
 (`NC_BRAIN_WHISPER_MODEL=large-v3`, already in `models\whisper`); English 6.1 / 2.8 % (`docs\perf\afrikaans-wer.json`).
 
 CI (`.github/workflows/ci.yml`, GitHub Actions on every push; the repo is public, so it is free): brain + companion on
-SQLite and Postgres 17, Supabase 0001-0009 on an empty database (0007-0009 run twice), `gen_rls_migration --check`, the debug APK + Android unit tests, `cargo check`
+SQLite and Postgres 17, ruff + pyright, Supabase 0001-0009 on an empty database (0007-0009 run twice), `gen_rls_migration --check`, every
+Playwright spec in Chromium against a keyless stack (job "Keyless stack + Playwright"), the debug APK + Android unit tests, `cargo check`
 and unsigned Tauri installers. The APK and installers are artifacts of each run. Step logs need a GitHub sign-in; the
 test counts are notices on the run page, and a failing Android build or test writes its cause there too. This is how
 Postgres, Android and Tauri get tested: none of them can be built on this PC (no Postgres, nothing on C:, Smart App
@@ -124,6 +125,7 @@ cd services\brain
 .venv\Scripts\python.exe tools\seed_synthetic_farm.py         # workspace perf-2000 (2,000 nodes) for map timing
 .venv\Scripts\python.exe tools\profile_capture.py             # where a capture's time goes (real models, in memory)
 .venv\Scripts\python.exe tools\profile_retrieval.py; .venv\Scripts\python.exe tools\perf_probe.py   # retrieval at 2,000 nodes; routes, Gemma, Whisper, VRAM
+.venv\Scripts\python.exe tools\perf_sync.py --where WABAKIPI   # push/pull ~1,500 changes between two brains on :18788/:18789 (temp folder)
 .venv\Scripts\python.exe tools\afrikaans_wer.py --n 120 --out ..\..\docs\perf\afrikaans-wer.json   # FLEURS af_za in data\samples\fleurs-af
 cd ..\companion; .venv\Scripts\python.exe -m pytest -q
 cd ..\..\apps\desktop; npm.cmd ci --include=dev; npm.cmd run build
@@ -137,9 +139,33 @@ npm.cmd run dev   # the phone app in a browser on :5174 (.claude\launch.json "ph
                   # http://localhost:5174/?pair=notecad%3A%2F%2Fpair%3Fu%3Dhttp%3A%2F%2F127.0.0.1%3A8788%26w%3Dshowcase
 ```
 
+After a pull that changes engines or speed: `powershell -ExecutionPolicy Bypass -File tools\verify_phase6.ps1`
+(backs up `data\` to `data\archive\pre-phase6-<time>\` first and aborts if that fails; cold/warm start, suites,
+showcase typed/spoken/rules, golden notes with `NC_BRAIN_RULES_FAST_PATH` on/off, Whisper variants incl. large-v3,
+Gemma tok/s, peak VRAM, capture-to-map; writes `docs\perf\phase6-wabakipi.md`). `-Quick` skips the slow parts,
+`-Restore data\archive\pre-phase6-<time>` puts a backup back (today's `data\` is kept in `pre-restore-<time>` first).
+
 The three showcase notes: "Wheel needs changing on tractor model John Deere 9550 - number 1", "Today I planted
 field south 704 to 708", "Ask Sipho to check the water pump on the North borehole". Removed workspaces are written
 to `data\archive\<id>-<time>.json` first.
+
+## Running from a clone (cloud / CI)
+
+A Linux clone has no WABAKIPI paths, vault, models or GPU, so the stack runs keyless:
+`NC_BRAIN_ROUTERS=rules`, `NC_BRAIN_EMBED_BACKEND=hash`, `NC_BRAIN_STT=fixture` (a fixed transcript,
+`NC_BRAIN_STT_FIXTURE_TEXT`; `none` turns voice off), `NC_COMPANION_LLM_BACKEND=none`. Nothing reads a secret.
+
+```bash
+cd services/brain && uv venv --python 3.14 .venv && uv pip install --python .venv/bin/python -e ../companion[dev] -e ".[postgres,dev]" ruff pyright
+(cd ../../apps/desktop && npm ci --include=dev && npm run build)
+tools/keyless_stack.sh start /var/tmp/ibmm && tools/keyless_stack.sh seed /var/tmp/ibmm   # :8787 / :8788 / :8789, showcase 3/3
+cd ../../apps/desktop && NC_E2E_CHANNEL=chromium NC_BRAIN_LOG=/var/tmp/ibmm/brain/logs/api.log npx playwright test
+```
+
+Playwright switches: `NC_E2E_CHANNEL` (default `msedge`, as on WABAKIPI), `NC_E2E_BROWSER_PATH` (a Chromium already
+on the machine when its build differs from Playwright's), `NC_BRAIN_LOG` (the brain's `api.log`). Postgres tests:
+`NC_BRAIN_TEST_PG_URL=postgresql://...`. Cloud numbers live in `docs\perf\baseline-phase6-cloud.md` and are never
+WABAKIPI figures. `tools/keyless_stack.sh stop /var/tmp/ibmm` ends it.
 
 ## Rules for work in this folder
 

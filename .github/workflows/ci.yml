@@ -3,7 +3,8 @@
 # Policy 986 AED | License AED 900 | (c) 2026 Ionity Global (Pty) Ltd - All rights reserved
 #
 # What the desktop PC cannot do itself (Smart App Control, nothing on C:): Postgres, the Android APK and the Tauri
-# window are built and tested here, on clean GitHub machines. Models are never needed: the tests are hermetic.
+# window are built and tested here, on clean GitHub machines, and every e2e spec runs against a keyless stack.
+# Models are never needed: the tests are hermetic.
 name: ci
 
 on:
@@ -46,7 +47,20 @@ jobs:
           cache: pip
           cache-dependency-path: services/*/pyproject.toml
       - name: Install
-        run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]"
+        run: pip install -e "services/companion[dev]" -e "services/brain[postgres,dev]"  # dev pins ruff and pyright
+      - name: ruff and pyright (brain, companion)
+        # pyright sees psycopg here (the [postgres] extra), which WABAKIPI does not install
+        run: |
+          for d in services/brain services/companion; do
+            (cd "$d" && ruff check . --output-format=concise > ruff.txt 2>&1 \
+               && pyright --pythonpath "$(which python)" > pyright.txt 2>&1) || {
+              cat "$d/ruff.txt" "$d/pyright.txt" 2>/dev/null || true
+              { grep -hE ':[0-9]+:[0-9]+: ' "$d/ruff.txt" 2>/dev/null; grep -E ' error: ' "$d/pyright.txt" 2>/dev/null; } \
+                | head -20 | sed 's/%/%25/g' | awk 'BEGIN { ORS = "%0A" } { print }' \
+                | sed "s|^|::error title=$d static checks::|" || true; echo
+              exit 1; }
+            echo "::notice title=pyright $d::$(tail -1 "$d/pyright.txt")"
+          done
       - name: Supabase migrations 0001-0009 on an empty database
         # a failure goes out as an annotation, which anyone can read on the run page (step logs need a sign-in)
         run: |
@@ -100,6 +114,61 @@ jobs:
             exit 1; }
           cat pytest.txt
           echo "::notice title=Companion::$(tail -1 pytest.txt)"
+
+  e2e:
+    name: Keyless stack + Playwright (Chromium)
+    # brain, companion and Edge AI Node as services/brain/tools/keyless_stack.sh starts them: rules router, hash
+    # vectors, FixtureSTT for voice notes; the desktop app the brain serves at /app/; every e2e spec
+    runs-on: ubuntu-latest
+    env:
+      NC_KEYLESS_DATA: ${{ github.workspace }}/data/keyless
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: services/*/pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install
+        run: |
+          pip install -e "services/companion[dev]" -e "services/brain[dev]"
+          cd apps/desktop && npm ci --include=dev && npm run build && npx playwright install --with-deps chromium
+      - name: Start and seed the keyless stack
+        env:
+          PY: python
+        run: |
+          services/brain/tools/keyless_stack.sh start
+          services/brain/tools/keyless_stack.sh seed
+      - name: Playwright
+        working-directory: apps/desktop
+        env:
+          NC_E2E_CHANNEL: chromium
+          NC_BRAIN_LOG: ${{ github.workspace }}/data/keyless/brain/logs/api.log
+        run: |
+          code=0
+          npx playwright test --trace retain-on-failure > pw.txt 2>&1 || code=$?
+          cat pw.txt
+          sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | { grep -E '^ +✘' || true; } | head -20 | sed 's/%/%25/g' \
+            | awk 'BEGIN { ORS = "%0A" } { print }' | sed 's/^/::error title=Playwright failed::/'; echo
+          echo "::notice title=Playwright (Chromium, keyless)::$(sed -E 's/\x1b\[[0-9;]*m//g' pw.txt | grep -E '^ +[0-9]+ (passed|failed|skipped|flaky)' | tr -s ' ' | paste -sd ',' || true)"
+          exit "$code"
+      - name: Stop the stack
+        if: always()
+        run: services/brain/tools/keyless_stack.sh stop
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-failures
+          path: |
+            data/desktop/playwright
+            data/keyless/*/serve.out
+            data/keyless/*/logs
+          retention-days: 7
 
   android:
     name: Phone app (Android APK + unit tests)

@@ -6,6 +6,7 @@
   DeepgramSTT   cloud, Nova-3, keyterm prompting from the owner's own words
   WhisperSTT    faster-whisper on the desktop / Edge AI Node; Afrikaans path and offline fallback
   ChainSTT      tries engines in order; drops to the next one on error or low confidence
+  FixtureSTT    a fixed transcript for any recording: only with NC_BRAIN_STT=fixture (CI and clones without a model)
 """
 from __future__ import annotations
 
@@ -110,7 +111,7 @@ class WhisperSTT:
     def _load(self):
         if self._model is None:
             _cuda_dll_dirs()
-            from faster_whisper import WhisperModel
+            from faster_whisper import WhisperModel  # pyright: ignore[reportMissingImports]  (optional: pip install .[whisper])
             self._model = WhisperModel(self.model_name, device=self.device, compute_type=self.compute_type,
                                        download_root=self.download_root)
             self.active_device = getattr(getattr(self._model, "model", None), "device", self.device)
@@ -149,7 +150,7 @@ class WhisperSTT:
         model = self._load()
         source: Any = io.BytesIO(audio)
         if lang is None and len(self.languages) > 1:
-            from faster_whisper import decode_audio
+            from faster_whisper import decode_audio  # pyright: ignore[reportMissingImports]  (optional: pip install .[whisper])
             source = decode_audio(source)  # decoded once, for the language pick and the transcript
             lang = self._pick_language(model, source)
         elif lang is None and self.languages:
@@ -231,11 +232,30 @@ def local_only(stt: STT | None) -> STT | None:
     return None
 
 
+class FixtureSTT:
+    """Returns the same transcript for every recording, so the voice path (upload, audio kept, playback, routing) runs
+    end to end where no speech model exists: CI and cloud clones. Only NC_BRAIN_STT=fixture turns it on; the text is
+    NC_BRAIN_STT_FIXTURE_TEXT (default: showcase note 3, the one the e2e fake microphone plays)."""
+    name = "fixture"
+    cloud = False
+
+    def __init__(self, text: str | None = None):
+        self.text = text or os.environ.get("NC_BRAIN_STT_FIXTURE_TEXT") or \
+            "Ask Sipho to check the water pump on the North borehole"
+
+    def transcribe(self, audio, *, mime, lang_hint, keyterms):
+        if not audio:
+            raise STTError("empty recording")
+        return Transcript(text=self.text, language="en", confidence=1.0, engine=self.name)
+
+
 def make_stt(settings) -> STT | None:
     engines: list[STT] = []
     for name in [n.strip() for n in settings.stt_engines.split(",") if n.strip()]:
         if name == "deepgram" and (settings.deepgram_key or os.environ.get("DEEPGRAM_API_KEY")):
             engines.append(DeepgramSTT(settings.deepgram_key))
+        elif name == "fixture":
+            engines.append(FixtureSTT())
         elif name == "whisper":
             import importlib.util
             if importlib.util.find_spec("faster_whisper") is not None:

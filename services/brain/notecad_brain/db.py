@@ -216,7 +216,8 @@ class Database:
         else:
             import psycopg  # pyright: ignore[reportMissingImports]  (optional: pip install .[postgres])
             from psycopg.rows import dict_row  # pyright: ignore[reportMissingImports]
-            self._pg = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+            # Any: both drivers take DB-API strings with ? or %s; psycopg's stubs only accept literal or Template SQL
+            self._pg: Any = psycopg.connect(url, autocommit=True, row_factory=dict_row)  # pyright: ignore[reportArgumentType]
         self.migrate()
 
     # ---------------------------------------------------------------- plumbing
@@ -226,7 +227,7 @@ class Database:
         return sql
 
     @property
-    def _conn(self):
+    def _conn(self) -> Any:  # sqlite3.Connection or psycopg.Connection: both used through the DB-API surface
         return self._shared if self.kind == "sqlite" else self._pg
 
     def migrate(self) -> None:

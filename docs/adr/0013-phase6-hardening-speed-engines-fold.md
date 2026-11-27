@@ -165,3 +165,32 @@ Decisions:
 - **large-v3 is better on both languages but twice as slow on Afrikaans and not clear-cut**: turbo stays the default.
   `NC_BRAIN_WHISPER_MODEL=large-v3` switches (the model is in `models\whisper`, 3.1 GB). The English gain is on 19
   clips, 16 of them a synthetic voice; field recordings should decide.
+
+## Addendum (22 November 2026): Phase 6 from a clone
+
+The Phase 6 brief also asks for everything that can be proven from the repository alone, on a machine without
+WABAKIPI. A cloud session (Linux, 4 vCPU, no GPU; `docs\perf\env-cloud.md`) did that after Roles and POPIA.
+Finished work was not redone.
+
+- **Keyless stack** (`services/brain/tools/keyless_stack.sh`). It starts brain, companion and Edge AI Node with the env
+  vars `start_brain.ps1` sets, plus the rules router, hash vectors and no keys. It is used in a clone and in CI. The
+  PowerShell scripts stay the way to run IBMM on WABAKIPI.
+- **FixtureSTT** (`NC_BRAIN_STT=fixture`). It gives a fixed transcript for every recording, so the voice path (upload,
+  stored audio, playback, routing) runs end to end where no speech model exists. It is never in the default chain
+  (`deepgram,whisper`), it is local (`cloud = False`) and has a test. A tiny Whisper on CPU was rejected because it
+  would need a model download in CI and give non-deterministic text.
+- **Playwright off Windows**: `NC_E2E_CHANNEL` (default `msedge`, unchanged on WABAKIPI), `NC_E2E_BROWSER_PATH` and
+  `NC_BRAIN_LOG`. All 26 specs pass in Chromium against the keyless stack, the "Sync now" spec included, which WABAKIPI
+  skips without the edge node. CI runs them on every push.
+- **Static checks in CI**: ruff and pyright now run in CI. Pyright had 33 errors that only appear with psycopg
+  installed (CI's `[postgres]` extra, not on WABAKIPI). The connection is typed `Any`, because the brain uses both
+  drivers through the DB-API surface and psycopg's stubs accept only literal or Template SQL.
+- **Measured here, labelled cloud** (`docs\perf\baseline-phase6-cloud.md`): `tools/perf_sync.py`, two real brains
+  over HTTP, about 1,500 changes pushed in 0.50 s and pulled in 0.56 s with nothing left waiting. Expand all and
+  Collapse all on 2,000 nodes took 123 / 76 ms; capture to map took 285-301 ms.
+- **WABAKIPI kit** (`tools\verify_phase6.ps1`): backup first, re-runnable, `-Restore`. PSScriptAnalyzer 1.25 on pwsh
+  7.5 finds no errors or warnings (Write-Host excluded, as in the other scripts). The golden notes run with
+  `NC_BRAIN_RULES_FAST_PATH` on and off, Whisper with the compute types, beam, VAD, batching and large-v3
+  (`perf_probe.py --whisper-model`).
+- Kept as they are: Postgres 17 in CI (CLAUDE.md), and the engines and versions chosen in Stage 3. Nothing was
+  upgraded here: none of those choices can be decided without WABAKIPI numbers.
