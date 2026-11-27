@@ -24,6 +24,12 @@ Status: **built and tested from the repo; WABAKIPI not needed for the handover.*
 **Verified (cloud, merged `main`):** brain 196 passed / 1 skipped, companion 48, `gen_sync` / `gen_rls` /
 `popia_inventory --check` up to date, ruff clean, showcase 3/3 rules-only; the Windows parts on CI.
 
+**Fixed while checking CI:** the merged Playwright job failed on `fold on 2,000 nodes` twice in a row with 3 "long
+frames" (over 34 ms) while panning. No app code had changed since it passed on 22 November; the runner had: it drew
+42-45 fps idle (59 then), where 34 ms is ordinary jitter. The long-frame limit now follows the display's own rate like
+the fps check beside it (twice the idle frame time, never under 34 ms), so on WABAKIPI's 60/144 Hz panel it is still
+34 ms; the measured limit is logged as `long_frame_ms`.
+
 **Open:** the APK is still a debug build and the Tauri installer unsigned; iOS needs a Mac; the phone-pairing token
 path is fixed at `E:\.claude\_vault` (testers without an E: drive map one with `subst`, as the deployment guide says).
 
