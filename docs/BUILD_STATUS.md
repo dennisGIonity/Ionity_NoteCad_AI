@@ -43,6 +43,27 @@ all / Collapse all 123 / 76 ms; capture to map 285-301 ms; mind map payload at 2
 - The older scripts keep their PSScriptAnalyzer warnings (empty catch blocks, state-changing function names); not changed.
 - Still from Phase 6: code signing, the APK on a phone, iOS on a Mac, Claude routing with a key.
 
+## Test check after the rename: nothing broken, a game on the GPU (2 November 2026)
+
+Full matrix re-run on `0e4ac11` (the IBMM rename, the last commit). Details: `docs\perf\test-run-2026-11-02.md`.
+
+**What broke.** Only the live Playwright run: 4 of 26 failed (two typed-note flows, the node drawer's companion reply,
+the folded-branch badge). Every unit suite, lint, pyright, the three generator checks and CI were green.
+
+**Why.** War Thunder (`aces.exe`, through Steam) was running on the same RTX 4060: 81-86 % of the 3D engine, the GPU at
+98 % and 7.6 of 8 GB. Gemma's calls took 25-60 s (three cut off at the router's 60 s timeout, which falls back to the
+rules); the tests wait 30 s. The brain filed every note correctly, only late. The rename touches no timing, routing or
+string the tests look for.
+
+**What fixed it.** Closing the game. No code or test changed; none was skipped, loosened or re-snapshotted.
+
+**Counts, before (29 October) and after.** Brain 193 / 193 (1 skipped, Postgres), companion 48 / 48, desktop 40 / 40,
+phone 10 / 10; CI brain 295 on SQLite + Postgres, Android 20. Playwright three runs in a row, each: default 24 passed
++ 2 expected skips, roles + popia on `roles-showcase` 4, fold with screenshots 12 (25 passed / 1 skipped before, the
+roles test now counted in its own column). Field test 20/21 (95.2 %), showcase 3/3, both as before.
+
+**Open.** Nothing warns when another program holds the GPU; a slow Gemma looks like a broken brain (see the review).
+
 ## POPIA action audit: every action checked, every open finding fixed (29 October 2026)
 
 `docs\compliance\popia-action-register.md` is generated from the code by `tools\popia_inventory.py` (`--check` in CI):
