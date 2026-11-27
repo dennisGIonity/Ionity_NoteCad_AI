@@ -255,12 +255,9 @@ test.describe('fold on 2,000 nodes', () => {
     const fps = gaps.length / ((frames[frames.length - 1] - frames[0]) / 1000)
     const collapse = await timed('Collapse all', /Level 0/)
     const rendered = await items(page).count()
-    // a long frame is one that skipped a frame at this display's own rate: 34 ms at 60 Hz and above (WABAKIPI), longer on
-    // a machine whose idle rate is lower (a busy CI runner draws ~42 fps idle, where 34 ms is ordinary jitter)
-    const longMs = Math.max(34, 2 * (1000 / idle))
-    const long = gaps.filter((g) => g > longMs).length
+    const long = gaps.filter((g) => g > 34).length
     const out = { expand_all_ms: Math.round(expand), collapse_all_ms: Math.round(collapse), display_fps: +idle.toFixed(1),
-      pan_fps_expanded: +fps.toFixed(1), long_frames: long, long_frame_ms: +longMs.toFixed(1),
+      pan_fps_expanded: +fps.toFixed(1), long_frames: long,
       p95_frame_ms: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1), rendered_after_collapse: rendered }
     mkdirSync('../../data/desktop', { recursive: true })
     appendFileSync('../../data/desktop/perf.jsonl', `${JSON.stringify({ at: new Date().toISOString(), name: 'fold-2000', value: out })}\n`)
