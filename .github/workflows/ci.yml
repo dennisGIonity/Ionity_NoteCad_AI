@@ -263,3 +263,88 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
           retention-days: 14
+
+  beta-install:
+    # What a beta tester does (docs/beta/01_DEPLOYMENT_AND_INSTALLATION.md), on a clean Windows machine and in Windows
+    # PowerShell 5.1: tools\setup_ibmm.ps1 (CPU, no models: the runner has no GPU and the stack runs keyless), then the
+    # brain from the venv the script made, the showcase through it, the app page, and tools\collect_logs.ps1
+    name: Beta install on Windows (setup_ibmm.ps1)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: setup_ibmm.ps1 -CpuOnly -SkipModels
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup_ibmm.ps1 -Root $PWD -CpuOnly -SkipModels
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($f in "services\brain\.venv\Scripts\python.exe", "services\companion\.venv\Scripts\python.exe", "apps\desktop\dist\index.html") {
+            if (-not (Test-Path $f)) { Write-Host "::error title=Beta install::$f is missing after set-up"; exit 1 }
+          }
+      - name: Brain from the installed venv, showcase, app page
+        run: |
+          $data = Join-Path $PWD "data\ci"
+          New-Item -ItemType Directory -Force "$data\logs" | Out-Null
+          $env:NC_BRAIN_DB_URL = "sqlite:///" + ($data -replace '\\', '/') + "/brain.db"
+          $env:NC_BRAIN_AUDIO_DIR = "$data\audio"
+          $env:NC_BRAIN_ROUTERS = "rules"; $env:NC_BRAIN_EMBED_BACKEND = "hash"; $env:NC_BRAIN_STT = "none"
+          $env:NC_BRAIN_WORKER = "1"; $env:NC_BRAIN_BIND = "127.0.0.1"; $env:NC_BRAIN_WORKER_ID = "ci-windows"; $env:PYTHONUTF8 = "1"
+          $py = Join-Path $PWD "services\brain\.venv\Scripts\python.exe"
+          $p = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory services\brain `
+            -RedirectStandardOutput "$data\logs\serve.out.log" -RedirectStandardError "$data\logs\serve.err.log" `
+            -ArgumentList @("-m", "notecad_brain.serve", "--port", "8788", "--logs", "$data\logs")
+          $up = $false
+          for ($i = 0; $i -lt 120 -and -not $up; $i++) {
+            try { $up = (Invoke-WebRequest http://127.0.0.1:8788/health -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch { Start-Sleep -Milliseconds 500 }
+          }
+          if (-not $up) { Get-Content "$data\logs\serve.err.log" -Tail 40; Write-Host "::error title=Beta install::the brain did not start"; exit 1 }
+          $ErrorActionPreference = "Continue"
+          & $py services\brain\tools\seed_farm_showcase.py --reset-clean --auto
+          $seed = $LASTEXITCODE
+          & $py services\brain\tools\seed_farm_showcase.py --check
+          $check = $LASTEXITCODE
+          $app = (Invoke-WebRequest http://127.0.0.1:8788/app/ -UseBasicParsing -TimeoutSec 10).StatusCode
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_Process -Filter "name='python.exe'" | Where-Object { $_.CommandLine -like '*notecad_brain.serve*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Write-Host "::notice title=Beta install on Windows::setup_ibmm.ps1 ok; showcase seed exit $seed, check exit $check; /app/ $app"
+          if ($seed -ne 0 -or $check -ne 0 -or $app -ne 200) { exit 1 }
+      - name: collect_logs.ps1
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\collect_logs.ps1 -Root $PWD
+          $zip = Get-ChildItem ([Environment]::GetFolderPath("Desktop")) -Filter "IBMM_logs_*.zip" | Select-Object -First 1
+          if (-not $zip) { Write-Host "::error title=collect_logs::no zip on the Desktop"; exit 1 }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $names = [IO.Compression.ZipFile]::OpenRead($zip.FullName).Entries | ForEach-Object { $_.FullName }
+          Write-Host ($names -join "`n")
+          if ($names | Where-Object { $_ -match '\.(db|wav|webm|ogg|env)$' }) { Write-Host "::error title=collect_logs::data in the log zip"; exit 1 }
+          if (-not ($names -contains "pc.txt")) { Write-Host "::error title=collect_logs::pc.txt missing"; exit 1 }
+
+  beta-package:
+    # The handover zip for testers (tools/make_beta_package.sh), with the APK this run built
+    name: Beta handover package
+    needs: [android, beta-install]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: notecad-debug-apk
+          path: apk
+      - name: Build the package
+        run: |
+          apk=$(ls apk/*.apk | head -1)
+          tools/make_beta_package.sh out "$apk"
+          echo "::notice title=Beta package::$(ls out/*.zip | xargs -n1 basename), $(du -h out/*.zip | cut -f1)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ibmm-beta-package
+          path: out/*.zip
+          retention-days: 30

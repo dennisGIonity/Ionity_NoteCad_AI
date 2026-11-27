@@ -9,6 +9,24 @@
 
 Newest phase first. Each phase: what was built, what was verified on WABAKIPI, what is still open.
 
+## Beta 1 handover and branch tidy-up (27 November 2026)
+
+Status: **built and tested from the repo; WABAKIPI not needed for the handover.**
+
+| What | Where |
+|---|---|
+| The two branches that never reached `main` merged: Phase 6 from a clone (22 November: keyless stack, CI e2e, `tools\verify_phase6.ps1`) and the 2 November test run (fold screenshots, `docs\perf\test-run-2026-11-02.md`). Only conflict: this file, both entries kept | `main` |
+| Tester documents: front page, deployment and installation, proof of concept and scope, user guide with a 17-step test script and bug-report template | `docs/beta/` |
+| One-command install for testers (Python envs, models, app build; skips finished steps) and a log collector that never takes data | `tools\setup_ibmm.ps1`, `tools\collect_logs.ps1` |
+| Package builder (git archive of HEAD, no old blueprint copies, prompts or POPIA v1.0; key scan; manifest and SHA-256) | `tools/make_beta_package.sh` |
+| CI: the tester's install on a clean Windows runner in Windows PowerShell 5.1 (set-up, brain from its venv, showcase 3/3, `/app/`, log zip without data), then the package with the run's APK | jobs `beta-install`, `beta-package` |
+
+**Verified (cloud, merged `main`):** brain 196 passed / 1 skipped, companion 48, `gen_sync` / `gen_rls` /
+`popia_inventory --check` up to date, ruff clean, showcase 3/3 rules-only; the Windows parts on CI.
+
+**Open:** the APK is still a debug build and the Tauri installer unsigned; iOS needs a Mac; the phone-pairing token
+path is fixed at `E:\.claude\_vault` (testers without an E: drive map one with `subst`, as the deployment guide says).
+
 ## Phase 6 from a clone: keyless stack, every e2e spec on CI, WABAKIPI kit (22 November 2026)
 
 Status: **built and tested from the repo, awaiting WABAKIPI verification** (`tools\verify_phase6.ps1`). A cloud

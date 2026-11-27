@@ -100,8 +100,9 @@ language (`WhisperSTT.PROMPTS`). FLEURS Afrikaans WER: turbo 34.7 %, large-v3 32
 
 CI (`.github/workflows/ci.yml`, GitHub Actions on every push; the repo is public, so it is free): brain + companion on
 SQLite and Postgres 17, ruff + pyright, Supabase 0001-0009 on an empty database (0007-0009 run twice), `gen_rls_migration --check`, every
-Playwright spec in Chromium against a keyless stack (job "Keyless stack + Playwright"), the debug APK + Android unit tests, `cargo check`
-and unsigned Tauri installers. The APK and installers are artifacts of each run. Step logs need a GitHub sign-in; the
+Playwright spec in Chromium against a keyless stack (job "Keyless stack + Playwright"), the debug APK + Android unit tests, `cargo check`,
+unsigned Tauri installers, the tester's install on a clean Windows runner (`tools\setup_ibmm.ps1`, job "Beta install on Windows")
+and the beta handover zip with that run's APK (artifact `ibmm-beta-package`). The APK and installers are artifacts of each run. Step logs need a GitHub sign-in; the
 test counts are notices on the run page, and a failing Android build or test writes its cause there too. This is how
 Postgres, Android and Tauri get tested: none of them can be built on this PC (no Postgres, nothing on C:, Smart App
 Control). Android JVM tests (`app\src\test`, Robolectric 4.17) need the `--add-exports` flag in `app\build.gradle`.
@@ -166,6 +167,15 @@ Playwright switches: `NC_E2E_CHANNEL` (default `msedge`, as on WABAKIPI), `NC_E2
 on the machine when its build differs from Playwright's), `NC_BRAIN_LOG` (the brain's `api.log`). Postgres tests:
 `NC_BRAIN_TEST_PG_URL=postgresql://...`. Cloud numbers live in `docs\perf\baseline-phase6-cloud.md` and are never
 WABAKIPI figures. `tools/keyless_stack.sh stop /var/tmp/ibmm` ends it.
+
+## Beta handover (testers)
+
+The tester package is built from the committed tree: `tools/make_beta_package.sh <out-dir> [app-debug.apk]` (CI does
+it on every push to `main`: artifact `ibmm-beta-package`). Its documents are `docs/beta/` (front page, deployment and
+installation, the proof of concept and scope, the user guide with the test script; `@COMMIT@` / `@DATE@` are filled
+in by the script). Testers install with `tools\setup_ibmm.ps1 -Root <folder> [-CpuOnly] [-SkipModels]` and send logs
+with `tools\collect_logs.ps1 -Root <folder>` (logs and PC details only: never the database, recordings or the vault).
+When a feature, switch or start step changes, update `docs/beta/` in the same commit.
 
 ## Rules for work in this folder
 
